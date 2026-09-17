@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroVision AI - Бортовой компьютер опрыскивателя</title>
+    <meta name="description" content="Бортовой компьютер для самоходных опрыскивателей по регламенту Олжа Агро. Локальный инференс YOLO на скорости 18-20 км/ч, детекция сорняков Классов A и B, экономия 60-80% СЗР.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <nav id="nav">
+            <div class="container nav-container">
+                <a href="#" class="nav-logo">
+                    <div class="logo-icon"></div>
+                    AgroVision<span>AI</span>
+                </a>
+                <div class="nav-links">
+                    <a href="#how" data-i18n="nav_process">Архитектура ТЗ</a>
+                    <a href="#demo" data-i18n="nav_demo">Видеодемо</a>
+                    <a href="#tech" data-i18n="nav_hardware">Оборудование</a>
+                    <a href="#app" data-i18n="nav_software">Интерфейс ПК</a>
+                </div>
+                <div class="nav-actions">
+                    <div class="lang-switcher">
+                        <button class="lang-btn active" data-lang="ru">RU</button>
+                        <button class="lang-btn" data-lang="kk">KZ</button>
+                        <button class="lang-btn" data-lang="en">EN</button>
+                    </div>
+                    <a href="http://localhost:8000" class="nav-btn" data-i18n="nav_launch">Открыть систему</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section id="hero">
+            <div class="hero-bg-glow"></div>
+            <div class="container hero-container">
+                <div class="hero-text">
+                    <span class="badge">
+                        <span class="badge-dot"></span> <span data-i18n="hero_badge">100% OFFLINE НА БОРТУ | 18-20 КМ/Ч</span>
+                    </span>
+                    <h1><span data-i18n="hero_title1">Точное опрыскивание.</span><br><span class="accent" data-i18n="hero_title2">Экономия 60-80% СЗР.</span></h1>
+                    <p data-i18n="hero_desc">Бортовой компьютер для самоходных опрыскивателей по регламенту Олжа Агро. Локальный инференс YOLO на скорости 18-20 км/ч, детекция сорняков Классов A и B, экономический порог вредоносности на 1 м2 и быстродействующее PWM-управление 8 секциями штанги 24 метра.</p>
+                    <div class="hero-btns">
+                        <a href="http://localhost:8000" class="btn btn-primary">
+                            <span data-i18n="hero_btn_app">Запустить терминал</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </a>
+                        <a href="#how" class="btn btn-secondary" data-i18n="hero_btn_arch">Регламент ТЗ</a>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="hero-visual-wrapper">
+                        <div class="hero-visual-glow"></div>
+                        <div class="device-frame">
+                            <img src="assets/screen_monitoring.png" alt="AgroVision AI Бортовой терминал опрыскивателя">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="stats">
+            <div class="container stats-container">
+                <div class="stat-item">
+                    <div class="stat-value" data-i18n="stat1_num">18-20 км/ч</div>
+                    <div class="stat-label" data-i18n="stat1_label">Рабочая скорость в поле</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" data-i18n="stat2_num">11-13 мс</div>
+                    <div class="stat-label" data-i18n="stat2_label">Время отклика YOLO (50-60 FPS)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" data-i18n="stat3_num">60-80%</div>
+                    <div class="stat-label" data-i18n="stat3_label">Экономия гербицидов</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" data-i18n="stat4_num">100% OFFLINE</div>
+                    <div class="stat-label" data-i18n="stat4_label">Автономность без интернета</div>
+                </div>
+            </div>
+        </section>
+
+        <section id="how">
+            <div class="container section-header text-center">
+                <span class="badge" data-i18n="proc_badge">Регламент ТЗ Олжа Агро</span>
+                <h2 data-i18n="proc_title">Логика принятия решений бортового компьютера</h2>
+                <p data-i18n="proc_desc">Строгое соответствие 4 блокам агрономического регламента Северного Казахстана.</p>
+            </div>
+            <div class="container grid-4">
+                <div class="card card-dark">
+                    <div class="card-num">01</div>
+                    <h3 data-i18n="proc_step1_title">Локальный инференс YOLO</h3>
+                    <p data-i18n="proc_step1_desc">Модели YOLOv8s CropAndWeed и YOLO11n Broadleaf работают прямо на бортовом ПК без интернета с временем отклика 11-13 мс на скорости 18-20 км/ч.</p>
+                </div>
+                <div class="card card-dark">
+                    <div class="card-num">02</div>
+                    <h3 data-i18n="proc_step2_title">Классификация Класс A vs B</h3>
+                    <p data-i18n="proc_step2_desc">Разделение сорняков на двудольные (Класс A: щирица, марь, бодяк, осот, вьюнок) и злаковые (Класс B: овсюг, просо, пырей) для раздельного подбора действующих веществ.</p>
+                </div>
+                <div class="card card-dark">
+                    <div class="card-num">03</div>
+                    <h3 data-i18n="proc_step3_title">Порог вредоносности на 1 м2</h3>
+                    <p data-i18n="proc_step3_desc">До 5 малолетних сорняков на 1 м2 - форсунки выключены (100% экономия). 6-15 шт/м2 - норма. Более 15 шт/м2 - максимум (+25%). От 2 многолетников - критическая опасность и срочная обработка.</p>
+                </div>
+                <div class="card card-dark">
+                    <div class="card-num">04</div>
+                    <h3 data-i18n="proc_step4_title">Точечный PWM распыл</h3>
+                    <p data-i18n="proc_step4_desc">Быстродействующие клапаны независимо управляют 8 секциями штанги 24м, исключая сплошной перерасход и химические ожоги культуры.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="demo">
+            <div class="container section-header text-center">
+                <span class="badge">
+                    <span class="badge-dot"></span> <span data-i18n="demo_badge">Бортовой мониторинг в поле</span>
+                </span>
+                <h2 data-i18n="demo_title">Система AgroVision AI в реальной работе</h2>
+                <p data-i18n="demo_desc">Видеодемонстрация работы терминала опрыскивателя на скорости 18-20 км/ч с визуализацией 8 секций штанги.</p>
+            </div>
+            <div class="container demo-container">
+                <div class="video-wrapper">
+                    <div class="video-glow"></div>
+                    <div class="video-frame">
+                        <video controls playsinline autoplay muted loop poster="assets/screen_monitoring.png">
+                            <source src="assets/video.mp4" type="video/mp4">
+                            Ваш браузер не поддерживает видео.
+                        </video>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tech">
+            <div class="container section-header">
+                <span class="badge" data-i18n="hw_badge">Аппаратный комплекс</span>
+                <h2 data-i18n="hw_title">Оборудование для полевых условий</h2>
+                <p data-i18n="hw_desc">Надежная инженерия для работы в условиях степей Костанайской области.</p>
+            </div>
+            <div class="container hardware-stack">
+                <div class="hw-item fade-in">
+                    <div class="hw-visual">
+                        <div class="hw-frame">
+                            <img src="assets/station1.jpg" alt="Полевая метеостанция">
+                            <div class="hw-overlay"></div>
+                            <div class="tech-badge">
+                                <span class="pulse-dot"></span> <span data-i18n="hw1_badge">Метеостанция и штанга 24м</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hw-text">
+                        <div class="card-num" data-i18n="hw1_card_num">Модуль 01</div>
+                        <h3 data-i18n="hw1_title">Метеостанция и бортовой блок</h3>
+                        <p data-i18n="hw1_desc">Полевая метеостанция для фиксации благоприятного окна опрыскивания (ветер до 5 м/с, температура +12...+22 C) и вычислительный блок с инжекторными форсунками IDTA 120-03 для защиты от ветрового сноса.</p>
+                        <div class="hw-tags">
+                            <span data-i18n="hw1_tag1">Окно опрыскивания</span>
+                            <span data-i18n="hw1_tag2">IDTA 120-03</span>
+                            <span data-i18n="hw1_tag3">Штанга 24м (8 секций)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hw-item fade-in alternate">
+                    <div class="hw-visual">
+                        <div class="hw-frame drone-frame">
+                            <img src="assets/drone.jpeg" alt="Агро-дрон БПЛА аэроразведки">
+                            <div class="hw-overlay"></div>
+                            <div class="tech-badge">
+                                <span class="pulse-dot"></span> <span data-i18n="hw2_badge">Агро-дрон Sentinel</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hw-text">
+                        <div class="card-num" data-i18n="hw2_card_num">Модуль 02</div>
+                        <h3 data-i18n="hw2_title">Аэроразведка полей и БПЛА</h3>
+                        <p data-i18n="hw2_desc">Мультиспектральные агро-дроны для предварительного картирования полей, построения карт вегетационного индекса NDVI и выявления очагов многолетников перед выездом опрыскивателя.</p>
+                        <div class="hw-tags">
+                            <span data-i18n="hw2_tag1">Мультиспектральная камера</span>
+                            <span data-i18n="hw2_tag2">Картирование NDVI</span>
+                            <span data-i18n="hw2_tag3">Поиск очагов сорняков</span>
+                            <span data-i18n="hw2_tag4">Автономные полеты</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="app">
+            <div class="container section-header">
+                <span class="badge" data-i18n="sw_badge">Интерфейс ПК</span>
+                <h2 data-i18n="sw_title">Полнофункциональный софт агронома</h2>
+                <p data-i18n="sw_desc">Весь функционал бортового компьютера опрыскивателя в едином веб-терминале.</p>
+            </div>
+            <div class="container showcase-stack">
+                <div class="showcase fade-in">
+                    <div class="showcase-info">
+                        <h3 data-i18n="sw1_title">Бортовой монитор (18-20 км/ч)</h3>
+                        <p data-i18n="sw1_desc">Видеопоток штанги в реальном времени, прицел детекции, визуализатор 8 секций распыла (S1-S8), счетчики Класса A/B и расчет экономии СЗР.</p>
+                    </div>
+                    <div class="showcase-device">
+                        <div class="pc-frame">
+                            <img src="assets/screen_monitoring.png" alt="Бортовой монитор AgroVision AI">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="showcase alternate fade-in">
+                    <div class="showcase-info">
+                        <h3 data-i18n="sw2_title">Инспекция фото и расчет по ТЗ</h3>
+                        <p data-i18n="sw2_desc">Локальный инференс по фотоснимкам поля, порог вредоносности на 1 м2, определение фазы развития и автоматическая корректировка дозировки.</p>
+                    </div>
+                    <div class="showcase-device">
+                        <div class="pc-frame">
+                            <img src="assets/screen_analysis.png" alt="Инспекция фото AgroVision AI">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="showcase fade-in">
+                    <div class="showcase-info">
+                        <h3 data-i18n="sw3_title">Выбор гербицидов по классам</h3>
+                        <p data-i18n="sw3_desc">Официальные рекомендации препаратов: ауксиноподобные 2,4-Д и дикамба для Класса A, селективные граминициды для Класса B, глифосат по стерне при пырее.</p>
+                    </div>
+                    <div class="showcase-device">
+                        <div class="pc-frame">
+                            <img src="assets/screen_herbicides.png" alt="Выбор гербицидов AgroVision AI">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="showcase alternate fade-in">
+                    <div class="showcase-info">
+                        <h3 data-i18n="sw4_title">Агроном-Эксперт (Офлайн + Gemini 3.1 Flash Lite)</h3>
+                        <p data-i18n="sw4_desc">Автономная база знаний для работы без связи и облачная модель Google Gemini 3.1 Flash Lite с предустановленным API-ключом при наличии сети.</p>
+                    </div>
+                    <div class="showcase-device">
+                        <div class="pc-frame">
+                            <img src="assets/screen_chat.png" alt="Чат с агрономом AgroVision AI">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="showcase fade-in">
+                    <div class="showcase-info">
+                        <h3 data-i18n="sw5_title">Официальный регламент ТЗ ментора</h3>
+                        <p data-i18n="sw5_desc">Интерактивный экран со всеми 4 блоками регламента агрономической службы Олжа Агро.</p>
+                    </div>
+                    <div class="showcase-device">
+                        <div class="pc-frame">
+                            <img src="assets/screen_regulations.png" alt="Регламент ТЗ AgroVision AI">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="showcase alternate fade-in">
+                    <div class="showcase-info">
+                        <h3 data-i18n="sw6_title">Конфигурация опрыскивателя</h3>
+                        <p data-i18n="sw6_desc">Калибровка рабочей скорости (18-20 км/ч), ширины захвата штанги (24 метра), распылителей и региона возделывания.</p>
+                    </div>
+                    <div class="showcase-device">
+                        <div class="pc-frame">
+                            <img src="assets/screen_settings.png" alt="Настройки терминала AgroVision AI">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="cta">
+            <div class="container cta-container">
+                <div class="cta-card">
+                    <div class="cta-glow"></div>
+                    <h2 data-i18n="cta_title">Запустите AgroVision AI прямо сейчас</h2>
+                    <p data-i18n="cta_desc">Запуск в 1 клик через AgroVision.exe для Windows или start_pc_system.sh для Linux/macOS. 100% бесплатно и автономно.</p>
+                    <div class="cta-btns">
+                        <a href="http://localhost:8000" class="btn btn-primary" data-i18n="cta_btn_get">Открыть систему (localhost:8000)</a>
+                        <a href="https://github.com/murzakhmetov/agrovision" target="_blank" rel="noopener noreferrer" class="btn btn-outline" data-i18n="cta_btn_sales">GitHub Репозиторий</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-container">
+            <div class="footer-top">
+                <div class="footer-brand">
+                    <a href="#" class="nav-logo">AgroVision<span>AI</span></a>
+                    <p class="footer-tagline" data-i18n="footer_tagline">Бортовой компьютер опрыскивателя по регламенту агрономической службы Олжа Агро.</p>
+                    <div class="system-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text" data-i18n="footer_status">Система готова к работе в поле | 18-20 км/ч | 100% OFFLINE</span>
+                    </div>
+                </div>
+                
+                <div class="footer-nav">
+                    <div class="footer-col">
+                        <h4 data-i18n="footer_col1_title">Платформа</h4>
+                        <a href="http://localhost:8000" data-i18n="footer_col1_1">Бортовой ПК</a>
+                        <a href="#tech" data-i18n="footer_col1_2">Оборудование</a>
+                        <a href="#app" data-i18n="footer_col1_3">Интерфейс</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4 data-i18n="footer_col2_title">Оборудование</h4>
+                        <a href="#tech" data-i18n="footer_col2_1">Агро-дрон БПЛА</a>
+                        <a href="#tech" data-i18n="footer_col2_2">Метеостанция</a>
+                        <a href="#tech" data-i18n="footer_col2_3">Штанга 24 метра</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4 data-i18n="footer_col3_title">Ресурсы</h4>
+                        <a href="https://github.com/murzakhmetov/agrovision" target="_blank" rel="noopener noreferrer" data-i18n="footer_col3_1">GitHub Репозиторий</a>
+                        <a href="https://github.com/murzakhmetov/agrovision#readme" target="_blank" rel="noopener noreferrer" data-i18n="footer_col3_2">Документация README</a>
+                        <a href="http://localhost:8000" data-i18n="footer_col3_3">Запуск в 1 клик</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p data-i18n="footer_copy">&copy; 2026 AgroVision AI. Все права защищены.</p>
+                <div class="footer-legal">
+                    <a href="#how" data-i18n="footer_legal1">Регламент ТЗ</a>
+                    <a href="#how" data-i18n="footer_legal2">Олжа Агро</a>
+                    <a href="#how" data-i18n="footer_legal3">Оффлайн борт</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+    <script src="translations.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

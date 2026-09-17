@@ -460,7 +460,10 @@ def get_telemetry():
 def get_taxonomy():
     return TAXONOMY
 
-if os.path.exists("landing"):
+if os.path.exists("true"):
+    app.mount("/landing", StaticFiles(directory="true", html=True), name="landing")
+    app.mount("/true", StaticFiles(directory="true", html=True), name="true")
+elif os.path.exists("landing"):
     app.mount("/landing", StaticFiles(directory="landing", html=True), name="landing")
 if os.path.exists("web_app"):
     app.mount("/", StaticFiles(directory="web_app", html=True), name="web_app")
