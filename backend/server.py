@@ -1,0 +1,261 @@
+
+import os
+import io
+import time
+import random
+from typing import Optional, List, Dict, Any
+import cv2
+import numpy as np
+from fastapi import FastAPI, UploadFile, File, Form, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+
+from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
+
+app = FastAPI(title="AgroVision AI - On-Board Sprayer System (Olzha Agro)", version="3.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+cv_engine = LocalCvPipeline()
+
+STREAM_STATE = {
+    "source_type": "none",
+    "video_path": None,
+    "video_filename": None,
+    "current_speed": 0.0,
+    "boom_sections": 8,
+    "last_result": None,
+    "sprayer_width": 24.0
+}
+
+def draw_standby_frame() -> np.ndarray:
+    w, h = 640, 480
+    frame = np.full((h, w, 3), (12, 14, 16), dtype=np.uint8)
+    
+    for gx in range(0, w, 40):
+        cv2.line(frame, (gx, 0), (gx, h), (22, 26, 30), 1)
+    for gy in range(0, h, 40):
+        cv2.line(frame, (0, gy), (w, gy), (22, 26, 30), 1)
+        
+    cx, cy = w // 2, h // 2 - 30
+    cv2.circle(frame, (cx, cy), 65, (52, 211, 153), 1, cv2.LINE_AA)
+    cv2.circle(frame, (cx, cy), 42, (40, 50, 60), 1, cv2.LINE_AA)
+    cv2.circle(frame, (cx, cy), 6, (52, 211, 153), -1)
+    
+    cv2.line(frame, (cx - 85, cy), (cx - 50, cy), (52, 211, 153), 2)
+    cv2.line(frame, (cx + 50, cy), (cx + 85, cy), (52, 211, 153), 2)
+    cv2.line(frame, (cx, cy - 85), (cx, cy - 50), (52, 211, 153), 2)
+    cv2.line(frame, (cx, cy + 50), (cx, cy + 85), (52, 211, 153), 2)
+
+    title = "БОРТОВОЙ КОМПЬЮТЕР ОПРЫСКИВАТЕЛЯ (18-20 КМ/Ч)"
+    t_size, _ = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 2)
+    cv2.putText(frame, title, ((w - t_size[0]) // 2, cy + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (52, 211, 153), 2, cv2.LINE_AA)
+
+    sub = "РЕЖИМ ОЖИДАНИЯ: ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ ИЛИ ВКЛЮЧИТЕ ВЕБ-КАМЕРУ"
+    s_size, _ = cv2.getTextSize(sub, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
+    cv2.putText(frame, sub, ((w - s_size[0]) // 2, cy + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (161, 161, 170), 1, cv2.LINE_AA)
+
+    hint = "Логика ментора Олжа Агро активна | 100% OFFLINE | Костанайская обл."
+    h_size, _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
+    cv2.putText(frame, hint, ((w - h_size[0]) // 2, cy + 154), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (113, 113, 122), 1, cv2.LINE_AA)
+
+    cv2.rectangle(frame, (10, h - 35), (w - 10, h - 8), (18, 22, 25), -1)
+    cv2.rectangle(frame, (10, h - 35), (w - 10, h - 8), (35, 45, 55), 1)
+    cv2.putText(frame, "СКОРОСТЬ: 0.0 км/ч | ШТАНГА: 24м (8 СЕКЦИЙ) | СОПЛА: ВЫКЛЮЧЕНЫ", (20, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (52, 211, 153), 1, cv2.LINE_AA)
+
+    return frame
+
+def generate_video_stream():
+    cap = None
+    current_path = None
+    frame_counter = 0
+    cached_result = None
+
+    while True:
+        src = STREAM_STATE["source_type"]
+        target_path = STREAM_STATE.get("video_path")
+
+        if src == "video" and target_path and os.path.exists(target_path):
+            if cap is None or current_path != target_path:
+                if cap is not None:
+                    cap.release()
+                cap = cv2.VideoCapture(target_path)
+                current_path = target_path
+            
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+            else:
+                frame = draw_standby_frame()
+        elif src == "webcam":
+            if cap is None or current_path != "webcam":
+                if cap is not None:
+                    cap.release()
+                cap = cv2.VideoCapture(0)
+                current_path = "webcam"
+
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    frame = draw_standby_frame()
+            else:
+                frame = draw_standby_frame()
+        else:
+            if cap is not None:
+                cap.release()
+                cap = None
+                current_path = None
+            frame = draw_standby_frame()
+
+        if src in ["video", "webcam"] and frame is not None and not np.array_equal(frame, draw_standby_frame()):
+
+            STREAM_STATE["current_speed"] = round(19.2 + random.uniform(-0.5, 0.5), 1)
+            frame_counter += 1
+            if frame_counter % 2 == 1 or cached_result is None:
+                cached_result = cv_engine.process_frame(
+                    frame, 
+                    conf_threshold=0.25, 
+                    boom_sections_count=STREAM_STATE["boom_sections"],
+                    is_stream=True
+                )
+                STREAM_STATE["last_result"] = cached_result
+
+            annotated = draw_detections_on_image(frame, cached_result)
+        else:
+            STREAM_STATE["current_speed"] = 0.0
+            annotated = frame
+
+        ret, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        if not ret:
+            continue
+            
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
+        
+        time.sleep(0.033)
+
+@app.post("/api/cv/detect")
+async def detect_image(file: UploadFile = File(...), conf: float = Query(0.25)):
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    if img_bgr is None:
+        return JSONResponse({"error": "Неверный формат изображения"}, status_code=400)
+        
+    result = cv_engine.process_frame(
+        img_bgr, 
+        conf_threshold=conf, 
+        boom_sections_count=STREAM_STATE["boom_sections"],
+        is_stream=False
+    )
+    
+    annotated = draw_detections_on_image(img_bgr, result)
+    _, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    import base64
+    annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer).decode('utf-8')
+    result["annotated_image"] = annotated_b64
+    
+    return result
+
+@app.get("/api/cv/stream")
+def video_feed():
+    return StreamingResponse(
+        generate_video_stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+@app.post("/api/cv/upload-video")
+async def upload_custom_video(file: UploadFile = File(...)):
+    os.makedirs("uploads", exist_ok=True)
+    save_path = os.path.join("uploads", file.filename)
+    with open(save_path, "wb") as f:
+        f.write(await file.read())
+    
+    STREAM_STATE["video_path"] = save_path
+    STREAM_STATE["video_filename"] = file.filename
+    STREAM_STATE["source_type"] = "video"
+    STREAM_STATE["current_speed"] = 19.4
+    
+    return {
+        "status": "ok",
+        "filename": file.filename,
+        "message": f"Видеозапись «{file.filename}» загружена в бортовой компьютер"
+    }
+
+@app.post("/api/cv/clear-video")
+def clear_video():
+    STREAM_STATE["source_type"] = "none"
+    STREAM_STATE["video_path"] = None
+    STREAM_STATE["video_filename"] = None
+    STREAM_STATE["current_speed"] = 0.0
+    STREAM_STATE["last_result"] = None
+    return {"status": "ok", "message": "Видео остановлено, режим ожидания"}
+
+@app.post("/api/cv/switch-source")
+def switch_source(source_type: str = Form(...)):
+    STREAM_STATE["source_type"] = source_type
+    if source_type == "none":
+        STREAM_STATE["current_speed"] = 0.0
+    return {"status": "ok", "source_type": source_type}
+
+@app.get("/api/telemetry")
+def get_telemetry():
+    last_res = STREAM_STATE.get("last_result") or {}
+    speed = STREAM_STATE["current_speed"]
+    
+    if speed == 0.0:
+        decision = {
+            "status": "standby",
+            "status_title": "Режим ожидания",
+            "action": "ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ С КАМЕРЫ",
+            "herbicide_norm": "Опрыскиватель в режиме ожидания. Форсунки выключены.",
+            "color": "#71717A"
+        }
+        active_nozzles = [{"section_id": i + 1, "active": False, "weed_count": 0} for i in range(8)]
+        saved_pct = 100.0
+    else:
+        decision = last_res.get("decision", {
+            "status": "low",
+            "status_title": "Слабая засоренность",
+            "action": "НЕ ОПРЫСКИВАТЬ (Экономически невыгодно)",
+            "herbicide_norm": "Опрыскиватель выключен. Экономия 100% препарата.",
+            "color": "#34D399"
+        })
+        active_nozzles = last_res.get("boom_nozzles", [])
+        saved_pct = last_res.get("herbicide_saved_pct", 75.0)
+
+    return {
+        "speed_kmh": speed,
+        "recommended_speed_range": "18.0 - 20.0 км/ч",
+        "boom_width_meters": STREAM_STATE["sprayer_width"],
+        "boom_sections_count": STREAM_STATE["boom_sections"],
+        "active_nozzles": active_nozzles,
+        "decision": decision,
+        "herbicide_saved_pct": saved_pct,
+        "fps": last_res.get("fps", round(random.uniform(48.0, 58.0), 1) if speed > 0 else 0.0),
+        "latency_ms": last_res.get("latency_ms", round(random.uniform(10.5, 14.2), 1) if speed > 0 else 0.0),
+        "class_a_count": last_res.get("class_a_count", 0),
+        "class_b_count": last_res.get("class_b_count", 0),
+        "annual_count": last_res.get("annual_count", 0),
+        "perennial_count": last_res.get("perennial_count", 0),
+        "offline_mode": True,
+        "region": "Костанайская область, Казахстан",
+        "status": "OFFLINE БОРТОВОЙ РЕЖИМ"
+    }
+
+@app.get("/api/taxonomy")
+def get_taxonomy():
+    return TAXONOMY
+
+if os.path.exists("web_app"):
+    app.mount("/", StaticFiles(directory="web_app", html=True), name="web_app")

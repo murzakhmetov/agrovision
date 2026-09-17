@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroVision AI - Бортовой Компьютер Опрыскивателя («Олжа Агро»)</title>
+    <meta name="description" content="Профессиональная бортовая веб-система для ПК: локальное компьютерное зрение (YOLO) и агро-логика ментора «Олжа Агро» для работы на скорости 18-20 км/ч.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="bg-grid"></div>
+
+    <aside class="app-sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5"/>
+                    <path d="M2 12l10 5 10-5"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-title">AgroVision<span class="brand-accent">.AI</span></div>
+                <div style="font-size: 0.68rem; color: var(--text-tertiary); font-family: var(--font-mono); letter-spacing: 0.5px;">БОРТОВОЙ ПК ОПРЫСКИВАТЕЛЯ</div>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a class="nav-item active" data-tab="monitoring">
+                <div class="nav-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                </div>
+                <span data-i18n="nav_monitoring">Бортовой Терминал (18-20 км/ч)</span>
+            </a>
+
+            <a class="nav-item" data-tab="analysis">
+                <div class="nav-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                </div>
+                <span data-i18n="nav_analysis">Инспекция Фото (Агро-расчет)</span>
+            </a>
+
+            <a class="nav-item" data-tab="guidelines">
+                <div class="nav-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                </div>
+                <span data-i18n="nav_guidelines">Регламент ТЗ («Олжа Агро»)</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer" style="flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 20px;">
+            <div style="display: flex; justify-content: space-between; width: 100%; font-size: 0.76rem;">
+                <span style="color: var(--text-tertiary);">AgroVision PC v3.1</span>
+                <span style="color: var(--accent); font-family: var(--font-mono); font-weight: 700;">100% OFFLINE</span>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Костанайская обл. (без интернета)</div>
+        </div>
+    </aside>
+
+    <main class="app-main">
+
+        <header class="app-header">
+            <div class="header-left">
+                <div class="status-pill">
+                    <span class="pulse-dot"></span>
+                    <span data-i18n="sys_status">OFFLINE БОРТОВОЙ РЕЖИМ</span> :: <span data-i18n="sys_region">КОСТАНАЙСКАЯ ОБЛ. (БЕЗ СЕТИ)</span>
+                </div>
+
+                <div class="telemetry-pills">
+                    <div class="telem-pill">
+                        <span class="telem-label" data-i18n="speed_label">СКОРОСТЬ:</span>
+                        <span class="telem-val green" id="header-speed">18-20 км/ч</span>
+                    </div>
+                    <div class="telem-pill">
+                        <span class="telem-label" data-i18n="boom_label">ШТАНГА 24М:</span>
+                        <span class="telem-val">8 СЕКЦИЙ</span>
+                    </div>
+                    <div class="telem-pill">
+                        <span class="telem-label" data-i18n="saved_label">СЭКОНОМЛЕНО:</span>
+                        <span class="telem-val green" id="header-saved">100.0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-right">
+                
+                <div class="lang-switcher">
+                    <button class="lang-btn active" data-lang="ru">RU</button>
+                    <button class="lang-btn" data-lang="en">EN</button>
+                    <button class="lang-btn" data-lang="kk">KK</button>
+                </div>
+            </div>
+        </header>
+
+        <section id="view-monitoring" class="content-viewport active">
+            <div class="view-header">
+                <h1 class="view-title" data-i18n="mon_title">Бортовой Компьютер Опрыскивателя (18-20 км/ч)</h1>
+                <p class="view-subtitle" data-i18n="mon_subtitle">Мгновенный локальный CV-инференс и точечное управление 8 секциями штанги (100% OFFLINE)</p>
+            </div>
+
+            <div class="monitoring-terminal">
+                
+                <div class="video-container">
+                    <div class="video-stream-box">
+                        <img id="stream-img" src="" alt="Sprayer Boom Camera Stream" />
+                    </div>
+
+                    <div class="video-controls-bar">
+                        <div class="stream-selector" style="display: flex; gap: 8px; align-items: center;">
+                            <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/mkv,video/webm,video/mov" style="display: none;" />
+                            <button id="btn-upload-video" class="btn-pill" style="display: flex; align-items: center; gap: 6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                <span data-i18n="mon_upload_video">Загрузить видео опрыскивателя</span>
+                            </button>
+                            <button id="btn-source-cam" class="btn-pill" style="display: flex; align-items: center; gap: 6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                <span data-i18n="mon_source_cam">Веб-камера ПК</span>
+                            </button>
+                            <button id="btn-clear-video" class="btn-pill" style="display: none; color: #EF4444;" title="Очистить видео">&times; <span data-i18n="mon_clear_video">Очистить</span></button>
+                            <span id="active-video-name" style="font-size: 0.78rem; color: var(--text-tertiary); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Видео не загружено</span>
+                        </div>
+                        <div style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary);">
+                            Штанга: 24м | Захват сопла: 3м | Скорость: <strong style="color: var(--accent);" id="hud-speed">0.0 км/ч</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="terminal-hud-side">
+                    
+                    <div id="hud-decision-box" class="hud-decision-box low">
+                        <div style="font-size: 0.72rem; color: var(--text-tertiary); font-family: var(--font-mono); letter-spacing: 0.5px;">ЛОГИКА МЕНТОРА «ОЛЖА АГРО»</div>
+                        <div id="hud-decision-title" class="hud-decision-title">Режим ожидания</div>
+                        <div id="hud-decision-action" style="font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ С КАМЕРЫ</div>
+                        <div id="hud-decision-norm" class="hud-decision-desc">Опрыскиватель в режиме ожидания. Форсунки выключены.</div>
+                    </div>
+
+                    <div class="boom-visualizer">
+                        <div class="boom-title-row">
+                            <span data-i18n="mon_sections_title">Секции распыла штанги (24 метра / 8 клапанов)</span>
+                            <span style="color: var(--accent); font-family: var(--font-mono); font-weight: 700;">PWM 100Hz</span>
+                        </div>
+                        
+                        <div id="nozzles-track" class="nozzle-sections-track">
+                            
+                        </div>
+                    </div>
+
+                    <div class="glass-card" style="margin-top: 14px; padding: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">Текущий CV-Поток:</span>
+                            <span style="font-family: var(--font-mono); font-size: 0.82rem; color: var(--accent); font-weight: 700;" id="hud-fps">0.0 FPS</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: var(--font-mono); font-size: 0.78rem;">
+                            <div style="background: var(--bg-surface-elevated); padding: 8px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                                <div style="color: var(--text-tertiary); font-size: 0.7rem;">Класс A (Двудольные):</div>
+                                <div style="font-weight: 700; color: #F97316;" id="hud-class-a">0 шт</div>
+                            </div>
+                            <div style="background: var(--bg-surface-elevated); padding: 8px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                                <div style="color: var(--text-tertiary); font-size: 0.7rem;">Класс B (Злаковые):</div>
+                                <div style="font-weight: 700; color: #38BDF8;" id="hud-class-b">0 шт</div>
+                            </div>
+                            <div style="background: var(--bg-surface-elevated); padding: 8px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                                <div style="color: var(--text-tertiary); font-size: 0.7rem;">Малолетние:</div>
+                                <div style="font-weight: 700; color: var(--text-primary);" id="hud-annual">0 шт</div>
+                            </div>
+                            <div style="background: var(--bg-surface-elevated); padding: 8px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                                <div style="color: var(--text-tertiary); font-size: 0.7rem;">Многолетники:</div>
+                                <div style="font-weight: 700; color: #EF4444;" id="hud-perennial">0 шт</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card" style="margin-top: 14px; font-size: 0.8rem; color: var(--text-secondary); padding: 14px;">
+                        <strong style="color: var(--text-primary); display: block; margin-bottom: 6px;">Пороги вредоносности на 1 м²:</strong>
+                        • $\le 5$ шт/м² малолетних - <span style="color: var(--accent); font-weight: 600;">НЕ ОПРЫСКИВАТЬ</span><br/>
+                        • $6-15$ шт/м² малолетних - <span style="color: #FBBF24; font-weight: 600;">Стандартная норма</span><br/>
+                        • $>15$ шт/м² малолетних - <span style="color: #F97316; font-weight: 600;">Максимум</span><br/>
+                        • $\ge 2$ шт/м² многолетников - <span style="color: #EF4444; font-weight: 700;">КРИТИЧЕСКАЯ УГРОЗА!</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-analysis" class="content-viewport">
+            <div class="view-header">
+                <h1 class="view-title" data-i18n="an_title">Инспекция Фотографий и Расчет Дозировок по ТЗ</h1>
+                <p class="view-subtitle" data-i18n="an_subtitle">Локальный инференс YOLO + агро-логика ментора «Олжа Агро» (Класс А/В, фазы, экономический порог)</p>
+            </div>
+
+            <div class="analysis-layout">
+                
+                <div class="analysis-left">
+                    <div id="drop-zone" class="drop-zone">
+                        <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                        </svg>
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 6px;" data-i18n="an_drop_title">Перетащите снимок поля или выберите файл</h3>
+                        <p style="font-size: 0.84rem; color: var(--text-tertiary);" data-i18n="an_drop_hint">Поддерживаются форматы JPG, PNG, WebP (кадры с дрона или камеры опрыскивателя)</p>
+                        <input type="file" id="file-input" accept="image/*" style="display: none;" />
+                    </div>
+
+                    <div id="preview-container" style="display: none; position: relative; background: #000; border-radius: 16px; overflow: hidden; border: 1px solid var(--border-light); margin-bottom: 16px;">
+                        <img id="analysis-preview-img" src="" alt="Selected Field" style="width: 100%; max-height: 380px; object-fit: contain; display: block;" />
+                        <button onclick="analysisStudio.resetSelection()" style="position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.75); border: 1px solid var(--border-light); color: #FFF; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; cursor: pointer;">Изменить снимок</button>
+                    </div>
+
+                    <button id="btn-run-analysis" class="analysis-btn" data-i18n="an_analyze_btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Запустить Локальный CV-Анализ (OFFLINE)
+                    </button>
+                </div>
+
+                <div class="analysis-right" id="analysis-results">
+                    
+                    <div class="glass-card" style="text-align: center; padding: 48px 24px; color: var(--text-tertiary);">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 12px; color: var(--text-muted);"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                        <h4 style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 6px;">Снимок не выбран</h4>
+                        <p style="font-size: 0.85rem;">Загрузите снимок поля или листьев слева для запуска локальной модели и классификации сорняков по регламенту «Олжа Агро».</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-guidelines" class="content-viewport">
+            <div class="view-header">
+                <h1 class="view-title" data-i18n="guide_title">Регламент Технического Задания («Олжа Агро»)</h1>
+                <p class="view-subtitle" data-i18n="guide_subtitle">Официальные критерии агрономической службы и логика принятия решений бортового компьютера</p>
+            </div>
+
+            <div class="guidelines-grid">
+                
+                <div class="guideline-card orange">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="font-size: 1.15rem; font-weight: 700; color: #F97316;">1. Классификация сорняков</h3>
+                        <span class="breakdown-badge" style="background: rgba(249, 115, 22, 0.15); color: #F97316; border: 1px solid rgba(249, 115, 22, 0.3);">КЛАСС A / КЛАСС B</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 14px;">
+                        Разделение сорной растительности на биологические группы для селективного подбора гербицида:
+                    </p>
+
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border-left: 3px solid #F97316;">
+                            <div style="font-weight: 700; color: #F97316; font-size: 0.9rem; margin-bottom: 4px;">КЛАСС A: Двудольные (Широколистные)</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+                                • <strong>Малолетние:</strong> <span class="species-pill annual">Щирица (Amaranthus)</span> <span class="species-pill annual">Марь белая (Chenopodium)</span><br/>
+                                • <strong>Многолетние:</strong> <span class="species-pill perennial">Бодяк полевой</span> <span class="species-pill perennial">Осот</span> <span class="species-pill perennial">Вьюнок</span>
+                                <div style="color: #EF4444; font-weight: 600; font-size: 0.78rem; margin-top: 4px;"> САМЫЙ ОПАСНЫЙ СЕКТОР! Глубокая корневая система.</div>
+                            </div>
+                        </div>
+
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border-left: 3px solid #38BDF8;">
+                            <div style="font-weight: 700; color: #38BDF8; font-size: 0.9rem; margin-bottom: 4px;">КЛАСС B: Злаковые (Узколистные)</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+                                • <strong>Малолетние:</strong> <span class="species-pill grass">Овсюг (Avena fatua)</span> <span class="species-pill grass">Куриное просо</span><br/>
+                                • <strong>Многолетние:</strong> <span class="species-pill perennial">Пырей ползучий</span>
+                            </div>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: var(--accent); background: var(--accent-subtle); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-accent);">
+                            <strong>Правило ТЗ:</strong> Выбор типа гербицида жестко привязан к обнаруженному классу.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="guideline-card yellow">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="font-size: 1.15rem; font-weight: 700; color: #FBBF24;">2. Логика принятия решений</h3>
+                        <span class="breakdown-badge" style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.3);">ПОРОГ НА 1 М²</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px;">
+                        Экономический порог вредоносности на 1 м² - математическое основание для управления форсунками:
+                    </p>
+
+                    <table class="rule-table">
+                        <thead>
+                            <tr>
+                                <th>ПЛОТНОСТЬ НА 1 М²</th>
+                                <th>ЗАСОРЕННОСТЬ</th>
+                                <th>ДЕЙСТВИЕ БОРТОВОГО ПК</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="font-family: var(--font-mono); font-weight: 700; color: var(--accent);">$\le 5$ шт/м² малолетних</td>
+                                <td>Слабая засоренность</td>
+                                <td><span style="color: var(--accent); font-weight: 700;">НЕ ОПРЫСКИВАТЬ</span><br/><span style="font-size: 0.75rem; color: var(--text-muted);">(Экономически невыгодно)</span></td>
+                            </tr>
+                            <tr>
+                                <td style="font-family: var(--font-mono); font-weight: 700; color: #FBBF24;">6-15 шт/м² малолетних</td>
+                                <td>Средняя засоренность</td>
+                                <td><span style="color: #FBBF24; font-weight: 700;">Стандартная норма</span><br/><span style="font-size: 0.75rem; color: var(--text-muted);">(Регламентная дозировка)</span></td>
+                            </tr>
+                            <tr>
+                                <td style="font-family: var(--font-mono); font-weight: 700; color: #F97316;">&gt; 15 шт/м² малолетних</td>
+                                <td>Сильная засоренность</td>
+                                <td><span style="color: #F97316; font-weight: 700;">Опрыскивание на максимум</span><br/><span style="font-size: 0.75rem; color: var(--text-muted);">(Повышенная дозировка +25%)</span></td>
+                            </tr>
+                            <tr style="background: rgba(239, 68, 68, 0.08);">
+                                <td style="font-family: var(--font-mono); font-weight: 700; color: #EF4444;">$\ge 2$ шт/м² многолетников</td>
+                                <td><span style="color: #EF4444; font-weight: 700;">КРИТИЧЕСКАЯ УГРОЗА!</span></td>
+                                <td><span style="color: #EF4444; font-weight: 700;">СРОЧНО ОБРАБОТАТЬ</span><br/><span style="font-size: 0.75rem; color: var(--text-muted);">(Баковая смесь, мгновенный распыл)</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="guideline-card cyan">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="font-size: 1.15rem; font-weight: 700; color: #38BDF8;">3. Анализ фаз развития</h3>
+                        <span class="breakdown-badge" style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);">ВЕГЕТАЦИЯ</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+                        Фаза развития сорняка определяет восприимчивость к действующему веществу и процент поправки:
+                    </p>
+
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border-left: 3px solid var(--accent);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <strong style="color: var(--accent);">Фаза «Семядоли - 2 листа»</strong>
+                                <span style="font-family: var(--font-mono); font-size: 0.74rem; background: var(--accent-subtle); color: var(--accent); padding: 2px 6px; border-radius: 4px;">ИДЕАЛЬНОЕ ОКНО</span>
+                            </div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                                Сорняк наиболее уязвим. Рекомендация: <strong>базовая / минимальная дозировка</strong>. Экономия препарата и максимальная биоэффективность.
+                            </div>
+                        </div>
+
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border-left: 3px solid #FBBF24;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <strong style="color: #FBBF24;">Фаза «4-6 листьев»</strong>
+                                <span style="font-family: var(--font-mono); font-size: 0.74rem; background: rgba(251, 191, 36, 0.15); color: #FBBF24; padding: 2px 6px; border-radius: 4px;">СОРНЯК ГРУБЕЕТ</span>
+                            </div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                                Развивается восковой налет и кутикула. Рекомендация ИИ: <strong>автоматически увеличить дозировку на +15-20%</strong> для пробития листовой пластины.
+                            </div>
+                        </div>
+
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border-left: 3px solid #EF4444;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <strong style="color: #EF4444;">Фаза «Более 6 листьев / цветение»</strong>
+                                <span style="font-family: var(--font-mono); font-size: 0.74rem; background: rgba(239, 68, 68, 0.15); color: #EF4444; padding: 2px 6px; border-radius: 4px;">УПУЩЕННОЕ ОКНО</span>
+                            </div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                                Сорняк устойчив. <strong>Предупреждение агроному о неэффективности:</strong> есть риск сжечь культурное растение повышенной дозой гербицида.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="guideline-card red">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--accent);">4. Защита проекта: Бортовой компьютер</h3>
+                        <span class="breakdown-badge" style="background: var(--accent-subtle); color: var(--accent); border: 1px solid var(--border-accent);">КРИТЕРИИ ЖЮРИ</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+                        Технические требования для успешной защиты перед ментором и жюри:
+                    </p>
+
+                    <div style="display: flex; flex-direction: column; gap: 10px; font-size: 0.84rem; color: var(--text-secondary);">
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px;">
+                            <strong style="color: var(--accent); display: block; margin-bottom: 4px;">1) 100% OFFLINE стабильная работа</strong>
+                            В степных полях Костанайской области мобильной связи и интернета нет. Все нейросети YOLO, логика ментора и сервер работают локально на бортовом ПК.
+                        </div>
+
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px;">
+                            <strong style="color: var(--cyan); display: block; margin-bottom: 4px;">2) Мгновенный FPS (Скорость 18-20 км/ч)</strong>
+                            Скорость реального самоходного опрыскивателя в поле составляет 18-20 км/ч (5.5 м/с). Задержка инференса YOLO составляет ~11-13 мс (50-60 FPS), что гарантирует опережающее срабатывание клапанов штанги.
+                        </div>
+
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 8px;">
+                            <strong style="color: #FBBF24; display: block; margin-bottom: 4px;">3) 8 секций распыла (Штанга 24 метра)</strong>
+                            Штанга разбита на 8 независимых секций по 3 метра. При отсутствии сорняков клапаны секции мгновенно отсекают подачу раствора, обеспечивая экономию СЗР до 70-80%.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="js/translations.js"></script>
+    <script src="js/cv_player.js"></script>
+    <script src="js/analysis.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>
