@@ -11,11 +11,9 @@
 - Анализ фаз развития сорняков и автоматическая корректировка дозировки.
 - Студия инспекции фото с локальным инференсом YOLO.
 
-## 2. Локальные модели компьютерного зрения
-- YOLOv8s CropAndWeed (ml_models/weedblaster-cropandweed-yolov8s.pt)
-- YOLO11n Broadleaf (ml_models/broadleaf-yolo11n.pt, ml_models/broadleaf-yolo11n.onnx)
 
-## 3. Запуск системы
+
+## 2. Запуск системы
 Запуск через bash-скрипт:
 ./start_pc_system.sh
 
