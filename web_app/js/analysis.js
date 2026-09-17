@@ -1,5 +1,3 @@
-
-
 class AnalysisStudio {
     constructor() {
         this.dropZone = document.getElementById('drop-zone');
@@ -77,7 +75,7 @@ class AnalysisStudio {
                 <div class="glass-card" style="text-align: center; padding: 48px 24px; color: var(--text-tertiary);">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 12px; color: var(--text-muted);"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
                     <h4 style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 6px;">Снимок не выбран</h4>
-                    <p style="font-size: 0.85rem;">Загрузите снимок поля или листьев выше для запуска локальной модели и классификации сорняков по регламенту «Олжа Агро».</p>
+                    <p style="font-size: 0.85rem;">Загрузите снимок поля или листьев выше для запуска локальной модели и классификации сорняков по регламенту Олжа Агро.</p>
                 </div>
             `;
         }
@@ -86,6 +84,11 @@ class AnalysisStudio {
     async runAnalysis() {
         if (!this.selectedFile) {
             alert("Пожалуйста, загрузите снимок поля через форму слева");
+            return;
+        }
+
+        if (window.appState && window.appState.tokens < 10) {
+            window.appState.openTopupModal("Недостаточно токенов для запуска анализа (требуется 10 токенов)!");
             return;
         }
 
@@ -106,6 +109,11 @@ class AnalysisStudio {
             if (!res.ok) throw new Error("Ошибка обработки снимка");
 
             const data = await res.json();
+
+            if (window.appState) {
+                window.appState.tokens -= 10;
+                window.appState.updateTokenDisplay();
+            }
 
             this.renderResults(data);
 
@@ -141,12 +149,11 @@ class AnalysisStudio {
         const classBWeeds = weeds.filter(d => d.weed_class === 'B');
 
         const html = `
-            <!-- 1. Decision & Economic Threshold (Point 2 of TOR) -->
             <div class="glass-card" style="margin-bottom: 18px; border-left: 5px solid ${dec.color || '#34D399'};">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                     <div>
                         <div style="font-size: 0.72rem; color: var(--text-tertiary); font-family: var(--font-mono); letter-spacing: 0.5px; margin-bottom: 4px;">
-                            2. ЭКОНОМИЧЕСКИЙ ПОРОГ ВРЕДОНОСНОСТИ НА 1 М²
+                            2. ЭКОНОМИЧЕСКИЙ ПОРОГ ВРЕДОНОСНОСТИ НА 1 М2
                         </div>
                         <span class="breakdown-badge" style="background: ${dec.color}22; color: ${dec.color}; border: 1px solid ${dec.color};">
                             ${dec.status_title || 'Анализ завершен'}
@@ -166,13 +173,13 @@ class AnalysisStudio {
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: var(--bg-surface-elevated); padding: 12px; border-radius: 10px; border: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 0.85rem;">
                     <div>
                         <span style="color: var(--text-tertiary); font-size: 0.72rem;">МАЛОЛЕТНИЕ:</span>
-                        <div style="font-weight: 700; color: #F97316;">${data.annual_count || 0} шт (${dec.annual_count_per_m2 || 0} шт/м²)</div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">Порог: $\le 5$ откл / $6-15$ норма / $>15$ макс</div>
+                        <div style="font-weight: 700; color: #F97316;">${data.annual_count || 0} шт (${dec.annual_count_per_m2 || 0} шт/м2)</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Порог: <= 5 откл / 6-15 норма / >15 макс</div>
                     </div>
                     <div>
                         <span style="color: var(--text-tertiary); font-size: 0.72rem;">МНОГОЛЕТНИКИ:</span>
-                        <div style="font-weight: 700; color: ${dec.perennial_count_per_m2 >= 2 ? '#EF4444' : 'var(--text-primary)'};">${data.perennial_count || 0} шт (${dec.perennial_count_per_m2 || 0} шт/м²)</div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">Порог: $\ge 2$ шт/м² СРОЧНО!</div>
+                        <div style="font-weight: 700; color: ${dec.perennial_count_per_m2 >= 2 ? '#EF4444' : 'var(--text-primary)'};">${data.perennial_count || 0} шт (${dec.perennial_count_per_m2 || 0} шт/м2)</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Порог: >= 2 шт/м2 СРОЧНО!</div>
                     </div>
                     <div>
                         <span style="color: var(--text-tertiary); font-size: 0.72rem;">ЭКОНОМИЯ ГЕРБИЦИДА:</span>
@@ -182,41 +189,37 @@ class AnalysisStudio {
                 </div>
             </div>
 
-            <!-- 2. Classification Breakdown (Point 1 of TOR) -->
             <div class="glass-card" style="margin-bottom: 18px;">
                 <div class="card-title">
-                    <span>1. Классификация сорняков по регламенту «Олжа Агро»</span>
+                    <span>1. Классификация сорняков по регламенту Олжа Агро</span>
                     <span style="font-size: 0.78rem; font-family: var(--font-mono); color: var(--text-tertiary);">Всего найдено: ${weeds.length} сорняков</span>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-                    <!-- Class A (Dicot) -->
                     <div style="background: var(--bg-surface-elevated); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(249, 115, 22, 0.3);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <strong style="color: #F97316; font-size: 0.88rem;">КЛАСС A: Двудольные (Широколистные)</strong>
                             <span style="font-family: var(--font-mono); font-size: 0.8rem; background: rgba(249, 115, 22, 0.15); color: #F97316; padding: 2px 6px; border-radius: 4px;">${classAWeeds.length} шт</span>
                         </div>
                         <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5;">
-                            • <strong>Малолетние:</strong> щирица запрокинутая, марь белая<br/>
-                            • <strong>Многолетние:</strong> <span style="color: #EF4444; font-weight: 600;">бодяк полевой, осот, вьюнок</span> (самый опасный сектор!)
+                            * <strong>Малолетние:</strong> щирица запрокинутая, марь белая<br/>
+                            * <strong>Многолетние:</strong> <span style="color: #EF4444; font-weight: 600;">бодяк полевой, осот, вьюнок</span> (самый опасный сектор!)
                         </div>
                     </div>
 
-                    <!-- Class B (Monocot) -->
                     <div style="background: var(--bg-surface-elevated); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.3);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <strong style="color: #38BDF8; font-size: 0.88rem;">КЛАСС B: Злаковые (Узколистные)</strong>
                             <span style="font-family: var(--font-mono); font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: #38BDF8; padding: 2px 6px; border-radius: 4px;">${classBWeeds.length} шт</span>
                         </div>
                         <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5;">
-                            • <strong>Малолетние:</strong> овсюг обыкновенный, куриное просо<br/>
-                            • <strong>Многолетние:</strong> пырей ползучий
+                            * <strong>Малолетние:</strong> овсюг обыкновенный, куриное просо<br/>
+                            * <strong>Многолетние:</strong> пырей ползучий
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 3. Vegetative Phase Analysis (Point 3 of TOR) -->
             <div class="glass-card" style="margin-bottom: 18px;">
                 <div class="card-title">
                     <span>3. Анализ фаз развития сорняка (Агро-логика Ментора)</span>
@@ -230,11 +233,10 @@ class AnalysisStudio {
                 <div style="background: var(--bg-surface-elevated); border-radius: 8px; padding: 12px 14px; font-size: 0.85rem; color: var(--text-secondary); border: 1px solid var(--border-subtle); line-height: 1.5;">
                     <div><strong>Корректировка дозировки ИИ:</strong> <span style="color: var(--text-primary); font-weight: 700;">${phaseInfo.dose_adjustment}</span></div>
                     <div style="color: var(--text-tertiary); margin-top: 4px;">${phaseInfo.description || ''}</div>
-                    ${phaseInfo.warning ? `<div style="color: #EF4444; font-weight: 600; margin-top: 6px;"> ${phaseInfo.warning}</div>` : ''}
+                    ${phaseInfo.warning ? `<div style="color: #EF4444; font-weight: 600; margin-top: 6px;">ВНИМАНИЕ: ${phaseInfo.warning}</div>` : ''}
                 </div>
             </div>
 
-            <!-- 4. Herbicide Recommendation (Point 1 + 2 of TOR) -->
             <div class="glass-card">
                 <div class="card-title">
                     <span>Выбор типа гербицида в зависимости от класса (Северный Казахстан)</span>
@@ -250,7 +252,7 @@ class AnalysisStudio {
                     </div>
                     ${isCritical ? `
                     <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid var(--red); padding: 10px 12px; border-radius: 8px; color: #FCA5A5;">
-                        <strong>КРИТИЧЕСКИЙ ОЧАГ МНОГОЛЕТНИКОВ:</strong> Плотность $\ge 2$ шт/м²! Срочно внести баковую смесь системных гербицидов повышенной дозировки в фазе розетки до стеблевания.
+                        <strong>КРИТИЧЕСКИЙ ОЧАГ МНОГОЛЕТНИКОВ:</strong> Плотность >= 2 шт/м2! Срочно внести баковую смесь системных гербицидов повышенной дозировки в фазе розетки до стеблевания.
                     </div>
                     ` : ''}
                 </div>

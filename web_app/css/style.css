@@ -1004,3 +1004,35 @@ body {
     border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
+
+.mode-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    user-select: none;
+}
+
+.mode-toggle-btn.offline {
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid var(--border-accent);
+    color: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.mode-toggle-btn.online {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    color: var(--cyan);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.mode-toggle-btn:hover {
+    transform: translateY(-1px);
+}

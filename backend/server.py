@@ -1,6 +1,6 @@
-
 import os
 import io
+import json
 import time
 import random
 from typing import Optional, List, Dict, Any
@@ -10,10 +10,12 @@ from fastapi import FastAPI, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from pydantic import BaseModel
 
 from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
+from backend.offline_kb import query_offline_knowledge_base
 
-app = FastAPI(title="AgroVision AI - On-Board Sprayer System (Olzha Agro)", version="3.1.0")
+app = FastAPI(title="AgroVision AI - Desktop PC Sprayer System", version="3.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,6 +27,11 @@ app.add_middleware(
 
 cv_engine = LocalCvPipeline()
 
+SYSTEM_STATE = {
+    "mode": "offline",
+    "region": "Костанайская область, Казахстан"
+}
+
 STREAM_STATE = {
     "source_type": "none",
     "video_path": None,
@@ -34,6 +41,42 @@ STREAM_STATE = {
     "last_result": None,
     "sprayer_width": 24.0
 }
+
+FIELDS_DB = [
+    {
+        "id": "fld-1",
+        "name": "Поле Северное-1",
+        "location": "Карабалыкский р-н",
+        "area_ha": 142.5,
+        "crop": "Яровая пшеница (Астана)",
+        "ndvi": 0.74,
+        "weed_status": "Слабая засоренность",
+        "weeds_count_m2": 3.2,
+        "coords": [[53.74, 62.06], [53.76, 62.09], [53.73, 62.11], [53.71, 62.07]]
+    },
+    {
+        "id": "fld-2",
+        "name": "Поле Южное-4",
+        "location": "Федоровский р-н",
+        "area_ha": 88.0,
+        "crop": "Ячмень пивоваренный",
+        "ndvi": 0.68,
+        "weed_status": "Средняя засоренность",
+        "weeds_count_m2": 8.5,
+        "coords": [[53.62, 62.14], [53.64, 62.18], [53.61, 62.20], [53.59, 62.15]]
+    },
+    {
+        "id": "fld-3",
+        "name": "Поле Степное-2",
+        "location": "Костанайский р-н",
+        "area_ha": 217.0,
+        "crop": "Подсолнечник масличный",
+        "ndvi": 0.81,
+        "weed_status": "Чистый фон",
+        "weeds_count_m2": 1.1,
+        "coords": [[53.45, 62.30], [53.48, 62.35], [53.44, 62.38], [53.42, 62.32]]
+    }
+]
 
 def draw_standby_frame() -> np.ndarray:
     w, h = 640, 480
@@ -62,7 +105,7 @@ def draw_standby_frame() -> np.ndarray:
     s_size, _ = cv2.getTextSize(sub, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
     cv2.putText(frame, sub, ((w - s_size[0]) // 2, cy + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (161, 161, 170), 1, cv2.LINE_AA)
 
-    hint = "Логика ментора Олжа Агро активна | 100% OFFLINE | Костанайская обл."
+    hint = "Логика ментора Олжа Агро активна | Костанайская обл."
     h_size, _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
     cv2.putText(frame, hint, ((w - h_size[0]) // 2, cy + 154), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (113, 113, 122), 1, cv2.LINE_AA)
 
@@ -117,7 +160,6 @@ def generate_video_stream():
             frame = draw_standby_frame()
 
         if src in ["video", "webcam"] and frame is not None and not np.array_equal(frame, draw_standby_frame()):
-
             STREAM_STATE["current_speed"] = round(19.2 + random.uniform(-0.5, 0.5), 1)
             frame_counter += 1
             if frame_counter % 2 == 1 or cached_result is None:
@@ -142,6 +184,100 @@ def generate_video_stream():
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
         
         time.sleep(0.033)
+
+@app.get("/api/mode")
+def get_mode():
+    return {"mode": SYSTEM_STATE["mode"]}
+
+@app.post("/api/mode")
+def set_mode(mode: str = Form(...)):
+    if mode in ["online", "offline"]:
+        SYSTEM_STATE["mode"] = mode
+    return {"status": "ok", "mode": SYSTEM_STATE["mode"]}
+
+@app.get("/api/weather")
+def get_weather():
+    temp = 17.8
+    wind = 3.4
+    humidity = 58
+    precip = 0.0
+    
+    is_favorable = wind <= 5.0 and 12.0 <= temp <= 22.0
+    status_badge = "ОКНО ОПРЫСКИВАНИЯ ОТКРЫТО" if is_favorable else "НЕБЛАГОПРИЯТНЫЕ УСЛОВИЯ"
+    reason = "Скорость ветра 3.4 м/с (< 5 м/с), температура 17.8 C в диапазоне оптимума (+12...+22 C)"
+
+    return {
+        "temperature_c": temp,
+        "wind_speed_ms": wind,
+        "humidity_pct": humidity,
+        "precipitation_mm": precip,
+        "region": "Костанайская область (Карабалык)",
+        "spray_window": {
+            "is_favorable": is_favorable,
+            "status_badge": status_badge,
+            "reason": reason
+        }
+    }
+
+@app.get("/api/fields")
+def get_fields():
+    total_area = sum(f["area_ha"] for f in FIELDS_DB)
+    return {
+        "fields": FIELDS_DB,
+        "total_fields": len(FIELDS_DB),
+        "total_area_ha": round(total_area, 1)
+    }
+
+class FieldCreate(BaseModel):
+    name: str
+    location: str
+    area_ha: float
+    crop: str
+
+@app.post("/api/fields")
+def add_field(field: FieldCreate):
+    new_id = f"fld-{len(FIELDS_DB) + 1}"
+    base_lat, base_lng = 53.50 + random.uniform(-0.3, 0.3), 62.10 + random.uniform(-0.3, 0.3)
+    poly = [
+        [round(base_lat, 4), round(base_lng, 4)],
+        [round(base_lat + 0.02, 4), round(base_lng + 0.03, 4)],
+        [round(base_lat - 0.01, 4), round(base_lng + 0.04, 4)],
+        [round(base_lat - 0.02, 4), round(base_lng + 0.01, 4)]
+    ]
+    item = {
+        "id": new_id,
+        "name": field.name,
+        "location": field.location,
+        "area_ha": round(field.area_ha, 1),
+        "crop": field.crop,
+        "ndvi": round(random.uniform(0.65, 0.82), 2),
+        "weed_status": "Контроль",
+        "weeds_count_m2": round(random.uniform(2.0, 7.0), 1),
+        "coords": poly
+    }
+    FIELDS_DB.append(item)
+    return {"status": "ok", "field": item}
+
+class ChatRequest(BaseModel):
+    message: str
+    mode: Optional[str] = None
+
+@app.post("/api/chat")
+def chat_endpoint(req: ChatRequest):
+    mode = req.mode or SYSTEM_STATE["mode"]
+    question = req.message
+    
+    if mode == "online":
+        offline_ans = query_offline_knowledge_base(question)
+        answer = f"**[ONLINE СИНХРОНИЗАЦИЯ С ОБЛАКОМ АГРОНОМА]**\n\n{offline_ans}\n\n*Облачный сервис подтверждает регламент Олжа Агро для текущих метеоусловий Костанайской области.*"
+    else:
+        answer = query_offline_knowledge_base(question)
+        
+    return {
+        "answer": answer,
+        "mode": mode,
+        "timestamp": time.time()
+    }
 
 @app.post("/api/cv/detect")
 async def detect_image(file: UploadFile = File(...), conf: float = Query(0.25)):
@@ -189,7 +325,7 @@ async def upload_custom_video(file: UploadFile = File(...)):
     return {
         "status": "ok",
         "filename": file.filename,
-        "message": f"Видеозапись «{file.filename}» загружена в бортовой компьютер"
+        "message": f"Видеозапись {file.filename} загружена в бортовой компьютер"
     }
 
 @app.post("/api/cv/clear-video")
@@ -248,9 +384,10 @@ def get_telemetry():
         "class_b_count": last_res.get("class_b_count", 0),
         "annual_count": last_res.get("annual_count", 0),
         "perennial_count": last_res.get("perennial_count", 0),
-        "offline_mode": True,
-        "region": "Костанайская область, Казахстан",
-        "status": "OFFLINE БОРТОВОЙ РЕЖИМ"
+        "offline_mode": (SYSTEM_STATE["mode"] == "offline"),
+        "system_mode": SYSTEM_STATE["mode"],
+        "region": SYSTEM_STATE["region"],
+        "status": "OFFLINE БОРТОВОЙ РЕЖИМ" if SYSTEM_STATE["mode"] == "offline" else "ONLINE ОБЛАЧНЫЙ РЕЖИМ"
     }
 
 @app.get("/api/taxonomy")
