@@ -87,11 +87,6 @@ class AnalysisStudio {
             return;
         }
 
-        if (window.appState && window.appState.tokens < 10) {
-            window.appState.openTopupModal("Недостаточно токенов для запуска анализа (требуется 10 токенов)!");
-            return;
-        }
-
         const btn = this.btnAnalyze;
         const originalText = btn.innerHTML;
         btn.innerHTML = `<span class="pulse-dot"></span> Локальный CV-Инференс YOLO...`;
@@ -109,12 +104,6 @@ class AnalysisStudio {
             if (!res.ok) throw new Error("Ошибка обработки снимка");
 
             const data = await res.json();
-
-            if (window.appState) {
-                window.appState.tokens -= 10;
-                window.appState.updateTokenDisplay();
-            }
-
             this.renderResults(data);
 
             if (data.annotated_image && this.previewImg) {

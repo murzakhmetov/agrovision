@@ -9,8 +9,6 @@ const translations = {
         saved_label: "СЭКОНОМЛЕНО",
         mode_btn_offline: "РЕЖИМ: OFFLINE",
         mode_btn_online: "РЕЖИМ: ONLINE",
-        tokens_label: "токенов",
-        topup_btn: "Пополнить",
         
         nav_dashboard: "Обзор и Дашборд",
         nav_monitoring: "Бортовой Мониторинг (18-20 км/ч)",
@@ -72,8 +70,6 @@ const translations = {
         saved_label: "SAVED",
         mode_btn_offline: "MODE: OFFLINE",
         mode_btn_online: "MODE: ONLINE",
-        tokens_label: "tokens",
-        topup_btn: "Top Up",
 
         nav_dashboard: "Dashboard Overview",
         nav_monitoring: "On-Board Terminal (18-20 km/h)",
@@ -135,8 +131,6 @@ const translations = {
         saved_label: "ҮНЕМДЕЛДІ",
         mode_btn_offline: "РЕЖИМ: OFFLINE",
         mode_btn_online: "РЕЖИМ: ONLINE",
-        tokens_label: "токен",
-        topup_btn: "Толықтыру",
 
         nav_dashboard: "Бақылау Тақтасы",
         nav_monitoring: "Борттық Компьютер (18-20 км/сағ)",

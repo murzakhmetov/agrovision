@@ -36,18 +36,8 @@ class AgronomistChat {
         const text = this.chatInput.value.trim();
         if (!text) return;
 
-        if (window.appState && window.appState.tokens <= 0) {
-            window.appState.openTopupModal("Недостаточно токенов для консультации с агрономом!");
-            return;
-        }
-
         this.appendMessage('user', text);
         this.chatInput.value = '';
-
-        if (window.appState) {
-            window.appState.tokens -= 1;
-            window.appState.updateTokenDisplay();
-        }
 
         const mode = window.appState ? window.appState.mode : 'offline';
         const loadingId = this.appendLoading();

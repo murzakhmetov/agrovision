@@ -2,7 +2,6 @@ class AppState {
     constructor() {
         this.currentTab = 'dashboard';
         this.mode = localStorage.getItem('agrovision_mode') || 'offline';
-        this.tokens = parseInt(localStorage.getItem('agrovision_tokens') || '100');
         this.weather = null;
     }
 
@@ -10,7 +9,6 @@ class AppState {
         this.bindNavigation();
         this.bindModeToggle();
         this.bindModals();
-        this.updateTokenDisplay();
         this.fetchWeather();
         this.initLanguage();
         this.applyMode(this.mode);
@@ -100,44 +98,7 @@ class AppState {
         }
     }
 
-    updateTokenDisplay() {
-        localStorage.setItem('agrovision_tokens', this.tokens);
-        const el = document.getElementById('header-tokens-val');
-        if (el) el.textContent = this.tokens;
-    }
-
-    openTopupModal(msg) {
-        const modal = document.getElementById('topup-modal');
-        const alertEl = document.getElementById('topup-alert-msg');
-        if (alertEl) {
-            alertEl.textContent = msg || '';
-            alertEl.style.display = msg ? 'block' : 'none';
-        }
-        if (modal) modal.classList.add('open');
-    }
-
     bindModals() {
-        const topupModal = document.getElementById('topup-modal');
-        const btnOpenTopup = document.getElementById('btn-open-topup');
-        const btnCloseTopup = document.getElementById('btn-close-topup');
-
-        if (btnOpenTopup && topupModal) {
-            btnOpenTopup.addEventListener('click', () => this.openTopupModal());
-        }
-        if (btnCloseTopup && topupModal) {
-            btnCloseTopup.addEventListener('click', () => topupModal.classList.remove('open'));
-        }
-
-        document.querySelectorAll('.topup-pack-card').forEach(card => {
-            card.addEventListener('click', () => {
-                const amount = parseInt(card.getAttribute('data-amount') || '50');
-                this.tokens += amount;
-                this.updateTokenDisplay();
-                topupModal.classList.remove('open');
-                alert(`Баланс успешно пополнен на +${amount} токенов!`);
-            });
-        });
-
         const settingsForm = document.getElementById('sprayer-settings-form');
         if (settingsForm) {
             settingsForm.addEventListener('submit', (e) => {
