@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroVision AI - Бортовой Компьютер Опрыскивателя (Олжа Агро)</title>
+    <meta name="description" content="Локальная веб-система компьютерного зрения для самоходного опрыскивателя. Скорость 18-20 км/ч, 100% OFFLINE, детекция сорняков Класса A и B, порог вредоносности на 1 м2 и независимое управление 8 секциями штанги 24 метра.">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="scroll-progress"></div>
+    <div id="cursor-dot"></div>
+    <div id="cursor-ring"></div>
+    <div class="bg-grid-overlay"></div>
+
+    <nav id="nav">
+        <div class="container nav-container">
+            <a href="#" class="nav-logo">
+                <div class="logo-icon">
+                    <span class="beacon-dot"></span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                </div>
+                <span class="logo-text">AgroVision<span class="logo-accent">.AI</span></span>
+            </a>
+            
+            <div class="nav-links desktop-nav">
+                <a href="#how" class="nav-link"><span class="nav-num">01.</span><span data-i18n="nav_arch">Архитектура ТЗ</span></a>
+                <a href="#demo" class="nav-link"><span class="nav-num">02.</span><span data-i18n="nav_demo">Видеодемо</span></a>
+                <a href="#tech" class="nav-link"><span class="nav-num">03.</span><span data-i18n="nav_hw">Оборудование</span></a>
+                <a href="#app" class="nav-link"><span class="nav-num">04.</span><span data-i18n="nav_sw">Интерфейс ПК</span></a>
+                <a href="#gallery" class="nav-link"><span class="nav-num">05.</span><span data-i18n="nav_guide">Сорняки</span></a>
+            </div>
+
+            <div class="nav-actions">
+                <div class="lang-switcher monospace">
+                    <button class="lang-btn active" data-lang="ru">RU</button>
+                    <button class="lang-btn" data-lang="en">EN</button>
+                    <button class="lang-btn" data-lang="kk">KK</button>
+                </div>
+
+                <a href="/" class="btn btn-cyan btn-sm desktop-btn">
+                    <span data-i18n="nav_launch">Открыть систему</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </a>
+
+                <button class="mobile-toggle" id="mobile-toggle" aria-label="Toggle Menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+
+        <div class="mobile-menu" id="mobile-menu">
+            <div class="mobile-menu-inner">
+                <a href="#how" class="mobile-link"><span class="nav-num">01.</span> <span data-i18n="nav_arch">Архитектура ТЗ</span></a>
+                <a href="#demo" class="mobile-link"><span class="nav-num">02.</span> <span data-i18n="nav_demo">Видеодемо</span></a>
+                <a href="#tech" class="mobile-link"><span class="nav-num">03.</span> <span data-i18n="nav_hw">Оборудование</span></a>
+                <a href="#app" class="mobile-link"><span class="nav-num">04.</span> <span data-i18n="nav_sw">Интерфейс ПК</span></a>
+                <a href="#gallery" class="mobile-link"><span class="nav-num">05.</span> <span data-i18n="nav_guide">Сорняки</span></a>
+                <a href="/" class="btn btn-cyan btn-lg mobile-cta-btn">
+                    <span data-i18n="nav_launch">Открыть систему</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section id="hero" class="relative">
+            <canvas id="constellation-canvas"></canvas>
+            <div class="hero-gradient-overlay"></div>
+
+            <div class="container hero-container relative z-10">
+                <div class="hero-text">
+                    <div class="tech-badge">
+                        <span class="pulse-indicator"></span>
+                        <span class="badge-code" data-i18n="hero_badge_status">РЕЖИМ :: 100% OFFLINE НА БОРТУ</span>
+                        <span class="badge-divider">|</span>
+                        <span class="badge-text" data-i18n="hero_badge_version">СКОРОСТЬ РАБОТЫ 18-20 КМ/Ч</span>
+                    </div>
+
+                    <h1 class="hero-title">
+                        <span data-i18n="hero_title_1">ТОЧНОЕ ОПРЫСКИВАНИЕ.</span><br>
+                        <span class="gradient-text" data-i18n="hero_title_2">ЭКОНОМИЯ 60-80% СЗР.</span>
+                    </h1>
+
+                    <p class="hero-description" data-i18n="hero_desc">
+                        Бортовой компьютер для самоходных опрыскивателей по регламенту Олжа Агро. Локальный инференс YOLO на скорости 18-20 км/ч, детекция Классов A и B, порог вредоносности на 1 м2 и независимое управление 8 секциями штанги 24 метра.
+                    </p>
+
+                    <div class="hero-btns">
+                        <a href="/" class="btn btn-cyan btn-lg magnetic-btn">
+                            <span data-i18n="hero_btn_app">Запустить терминал</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </a>
+                        <a href="#demo" class="btn btn-glass btn-lg magnetic-btn">
+                            <span data-i18n="hero_btn_arch">Смотреть видеопоток</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                        </a>
+                    </div>
+
+                    <div class="hero-hud-row">
+                        <div class="hud-item">
+                            <span class="hud-label" data-i18n="hud_speed">СКОРОСТЬ ОПРЫСКИВАНИЯ</span>
+                            <span class="hud-val monospace" id="hud-nodes">18-20 км/ч</span>
+                        </div>
+                        <div class="hud-divider"></div>
+                        <div class="hud-item">
+                            <span class="hud-label" data-i18n="hud_latency">ИНФЕРЕНС YOLO</span>
+                            <span class="hud-val monospace">&lt; 13ms</span>
+                        </div>
+                        <div class="hud-divider"></div>
+                        <div class="hud-item">
+                            <span class="hud-label" data-i18n="hud_boom">ШТАНГА / СЕКЦИИ</span>
+                            <span class="hud-val monospace">24м / 8 секций</span>
+                        </div>
+                        <div class="hud-divider"></div>
+                        <div class="hud-item">
+                            <span class="hud-label" data-i18n="hud_saving">ЭКОНОМИЯ СЗР</span>
+                            <span class="hud-val monospace">до 80%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hero-visual">
+                    <div class="device-frame-container hero-stable-frame">
+                        <div class="hud-corner hud-tl">+</div>
+                        <div class="hud-corner hud-tr">+</div>
+                        <div class="hud-corner hud-bl">+</div>
+                        <div class="hud-corner hud-br">+</div>
+                        
+                        <div class="scan-line"></div>
+                        
+                        <div class="device-frame">
+                            <img src="assets/screen_monitoring.png" alt="AgroVision AI Live On-Board Sprayer Terminal">
+                            <div class="hud-card-overlay">
+                                <div class="hud-tag" data-i18n="hud_stream_tag">ТЕРМИНАЛ ОПРЫСКИВАТЕЛЯ LIVE</div>
+                                <div class="hud-metrics">
+                                    <span class="metric-pill"><span class="dot green"></span> <span data-i18n="hud_field_active">Штанга: 8 секций PWM</span></span>
+                                    <span class="metric-pill"><span class="dot cyan"></span> <span data-i18n="hud_speed_val">19.4 км/ч (Норма)</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="stats">
+            <div class="container">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3 class="stat-number monospace" data-i18n="stat_speed_num">18-20 км/ч</h3>
+                            <p class="stat-label" data-i18n="stat_speed_label">Рабочая скорость в поле</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3 class="stat-number monospace" data-i18n="stat_fps_num">11-13 мс</h3>
+                            <p class="stat-label" data-i18n="stat_fps_label">Время отклика YOLO (50-60 FPS)</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3 class="stat-number monospace" data-i18n="stat_econ_num">60-80%</h3>
+                            <p class="stat-label" data-i18n="stat_econ_label">Экономия гербицидов</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3 class="stat-number monospace" data-i18n="stat_offline_num">100% OFFLINE</h3>
+                            <p class="stat-label" data-i18n="stat_offline_label">Автономность без интернета</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="how" class="section-padding">
+            <div class="container">
+                <div class="section-header text-center">
+                    <div class="tech-badge badge-center">
+                        <span class="badge-code" data-i18n="arch_badge">[ РЕГЛАМЕНТ ТЗ ОЛЖА АГРО ]</span>
+                    </div>
+                    <h2 class="section-title" data-i18n="arch_title">Логика принятия решений бортового компьютера</h2>
+                    <p class="section-subtitle" data-i18n="arch_subtitle">Строгое соответствие 4 блокам агрономического регламента Северного Казахстана.</p>
+                </div>
+
+                <div class="grid-3 cards-wrapper" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+                    <div class="glass-card card-hover">
+                        <div class="card-corner corner-tl">+</div>
+                        <div class="card-corner corner-tr">+</div>
+                        <div class="card-header">
+                            <span class="card-step monospace" data-i18n="arch_step1_code">01 // ИНФЕРЕНС НА БОРТУ</span>
+                            <div class="card-status-dot active-cyan"></div>
+                        </div>
+                        <h3 class="card-title" data-i18n="arch_step1_title">Сверхбыстрый локальный CV-инференс</h3>
+                        <p class="card-desc" data-i18n="arch_step1_desc">Модели YOLOv8s CropAndWeed и YOLO11n Broadleaf работают прямо на ПК в кабине опрыскивателя без интернета, обрабатывая видеопоток за 11-13 мс на скорости до 20 км/ч.</p>
+                        <div class="card-footer">
+                            <span class="tag monospace">YOLOv8s + YOLO11n</span>
+                            <span class="tag monospace">11-13 ms</span>
+                        </div>
+                    </div>
+
+                    <div class="glass-card card-hover">
+                        <div class="card-corner corner-tl">+</div>
+                        <div class="card-corner corner-tr">+</div>
+                        <div class="card-header">
+                            <span class="card-step monospace" data-i18n="arch_step2_code">02 // ТАКСОНОМИЯ КЛАССОВ</span>
+                            <div class="card-status-dot"></div>
+                        </div>
+                        <h3 class="card-title" data-i18n="arch_step2_title">Классификация: Класс A vs Класс B</h3>
+                        <p class="card-desc" data-i18n="arch_step2_desc">Разделение сорняков на двудольные (Класс A: щирица, марь, бодяк, осот, вьюнок) и злаковые (Класс B: овсюг, куриное просо, пырей) для раздельного подбора действующих веществ.</p>
+                        <div class="card-footer">
+                            <span class="tag monospace">КЛАСС A / ДВУДОЛЬНЫЕ</span>
+                            <span class="tag monospace">КЛАСС B / ЗЛАКОВЫЕ</span>
+                        </div>
+                    </div>
+
+                    <div class="glass-card card-hover">
+                        <div class="card-corner corner-tl">+</div>
+                        <div class="card-corner corner-tr">+</div>
+                        <div class="card-header">
+                            <span class="card-step monospace" data-i18n="arch_step3_code">03 // ПОРОГ ВРЕДОНОСНОСТИ</span>
+                            <div class="card-status-dot active-cyan"></div>
+                        </div>
+                        <h3 class="card-title" data-i18n="arch_step3_title">Экономический порог на 1 м2</h3>
+                        <p class="card-desc" data-i18n="arch_step3_desc">До 5 малолетних шт/м2 - форсунки закрыты (100% экономия). 6-15 шт/м2 - регламентная норма. Более 15 шт/м2 - максимум (+25%). От 2 многолетников - критическая опасность и мгновенное включение.</p>
+                        <div class="card-footer">
+                            <span class="tag monospace">ЭПВ &lt;= 5 ШТ/М2</span>
+                            <span class="tag monospace">МНОГОЛЕТНИКИ &gt;= 2</span>
+                        </div>
+                    </div>
+
+                    <div class="glass-card card-hover">
+                        <div class="card-corner corner-tl">+</div>
+                        <div class="card-corner corner-tr">+</div>
+                        <div class="card-header">
+                            <span class="card-step monospace" data-i18n="arch_step4_code">04 // ТОЧЕЧНЫЙ PWM РАСПЫЛ</span>
+                            <div class="card-status-dot"></div>
+                        </div>
+                        <h3 class="card-title" data-i18n="arch_step4_title">Управление 8 секциями штанги (24м)</h3>
+                        <p class="card-desc" data-i18n="arch_step4_desc">Независимые быстродействующие клапаны точечно включают распыл только над очагами сорняков, исключая сплошную обработку чистых участков и ожоги культуры.</p>
+                        <div class="card-footer">
+                            <span class="tag monospace">PWM 100Hz</span>
+                            <span class="tag monospace">SECTION CONTROL</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="demo" class="section-padding section-dark-bg">
+            <div class="container">
+                <div class="section-header text-center">
+                    <div class="tech-badge badge-center">
+                        <span class="pulse-indicator"></span>
+                        <span class="badge-code" data-i18n="demo_badge">[ БОРТОВОЙ МОНИТОРИНГ В ПОЛЕ ]</span>
+                    </div>
+                    <h2 class="section-title" data-i18n="demo_title">Система AgroVision AI в реальной работе</h2>
+                    <p class="section-subtitle" data-i18n="demo_subtitle">Посмотрите работу системы точечного внесения на самоходном опрыскивателе.</p>
+                </div>
+
+                <div class="video-showcase-wrapper">
+                    <div class="video-frame-container">
+                        <div class="hud-corner hud-tl">+</div>
+                        <div class="hud-corner hud-tr">+</div>
+                        <div class="hud-corner hud-bl">+</div>
+                        <div class="hud-corner hud-br">+</div>
+                        
+                        <div class="scan-line"></div>
+
+                        <div class="video-hud-tag monospace">
+                            <span class="ticker-dot green"></span>
+                            <span data-i18n="demo_hud_stream">STREAM // AGROVISION_LIVE_18KMH.MP4</span>
+                        </div>
+
+                        <div class="video-wrapper">
+                            <video controls playsinline preload="metadata" poster="assets/screen_monitoring.png">
+                                <source src="assets/video.mp4" type="video/mp4">
+                                <source src="video.mp4" type="video/mp4">
+                                Ваш браузер не поддерживает видео.
+                            </video>
+                        </div>
+                    </div>
+
+                    <div class="grid-3 video-features-grid">
+                        <div class="glass-card card-hover">
+                            <div class="card-corner corner-tl">+</div>
+                            <div class="card-corner corner-tr">+</div>
+                            <h4 class="card-title" data-i18n="demo_f1_title">Кабинный терминал 18-20 км/ч</h4>
+                            <p class="card-desc" data-i18n="demo_f1_desc">Отображение текущей скорости, факелов распыла по 8 секциям штанги, счетчиков сорняков и процентов экономии в режиме реального времени.</p>
+                            <div class="card-footer">
+                                <span class="tag-cyan monospace">18-20 KM/H</span>
+                                <span class="tag-cyan monospace">8 SECTIONS PWM</span>
+                            </div>
+                        </div>
+
+                        <div class="glass-card card-hover">
+                            <div class="card-corner corner-tl">+</div>
+                            <div class="card-corner corner-tr">+</div>
+                            <h4 class="card-title" data-i18n="demo_f2_title">Анализ фаз развития</h4>
+                            <p class="card-desc" data-i18n="demo_f2_desc">Определение фазы: семядоли - 2 листа (базовая норма), 4-6 листьев (+15-20% дозировка для пробития кутикулы), цветение (предупреждение о неэффективности).</p>
+                            <div class="card-footer">
+                                <span class="tag-cyan monospace">GROWTH STAGES</span>
+                                <span class="tag-cyan monospace">AUTO DOSAGE</span>
+                            </div>
+                        </div>
+
+                        <div class="glass-card card-hover">
+                            <div class="card-corner corner-tl">+</div>
+                            <div class="card-corner corner-tr">+</div>
+                            <h4 class="card-title" data-i18n="demo_f3_title">Точный расчет экономии</h4>
+                            <p class="card-desc" data-i18n="demo_f3_desc">Мгновенная калькуляция сэкономленного СЗР в литрах и тенге по сравнению со сплошным недифференцированным внесением.</p>
+                            <div class="card-footer">
+                                <span class="tag-cyan monospace">SAVINGS CALC</span>
+                                <span class="tag-cyan monospace">60-80% ROI</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tech" class="section-padding">
+            <div class="container">
+                <div class="section-header">
+                    <div class="tech-badge">
+                        <span class="badge-code" data-i18n="hw_badge">[ ОБОРУДОВАНИЕ И КАЛИБРОВКА ]</span>
+                    </div>
+                    <h2 class="section-title" data-i18n="hw_title">Аппаратный комплекс опрыскивателя</h2>
+                    <p class="section-subtitle" data-i18n="hw_subtitle">Надежные компоненты для непрерывной работы в условиях степей Костанайской области.</p>
+                </div>
+
+                <div class="hardware-stack">
+                    <div class="hw-card glass-card">
+                        <div class="hw-visual">
+                            <div class="hw-frame">
+                                <img src="assets/station1.jpg" alt="AgroVision Sprayer On-Board Computer">
+                                <div class="scan-line"></div>
+                                <div class="hw-frame-overlay"></div>
+                                <div class="hw-hud-badge monospace">SPRAyER_TERMINAL_V3 // ID: 884-A</div>
+                            </div>
+                        </div>
+                        <div class="hw-info">
+                            <div class="card-step monospace" data-i18n="hw1_unit">МОДУЛЬ :: 01</div>
+                            <h3 class="hw-title" data-i18n="hw1_title">Бортовой блок и сенсорная штанга 24м</h3>
+                            <p class="hw-desc" data-i18n="hw1_desc">Промышленный вычислитель с защитой от пыли и вибраций, высокоскоростные камеры с активной подсветкой и двухфакельные инжекторные форсунки IDTA 120-03 для исключения сноса ветром.</p>
+                            <ul class="hw-specs">
+                                <li><span class="spec-bullet">•</span> <span data-i18n="hw1_spec1">8 независимых секций штанги с быстрым ШИМ-управлением</span></li>
+                                <li><span class="spec-bullet">•</span> <span data-i18n="hw1_spec2">Инжекторные распылители IDTA 120-03 (крупная капля)</span></li>
+                                <li><span class="spec-bullet">•</span> <span data-i18n="hw1_spec3">Полная пылевлагозащита IP67 для полевых условий</span></li>
+                            </ul>
+                            <div class="hw-tags">
+                                <span class="tag-cyan monospace">BOOM 24M</span>
+                                <span class="tag-cyan monospace">IDTA 120-03</span>
+                                <span class="tag-cyan monospace">IP67 RATED</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hw-card glass-card alternate">
+                        <div class="hw-visual">
+                            <div class="hw-frame">
+                                <img src="assets/drone.jpeg" alt="AgroVision Aerial Scouting Drone">
+                                <div class="scan-line"></div>
+                                <div class="hw-frame-overlay"></div>
+                                <div class="hw-hud-badge monospace">AERO_SCOUT_V4 // ID: 991-F</div>
+                            </div>
+                        </div>
+                        <div class="hw-info">
+                            <div class="card-step monospace" data-i18n="hw2_unit">МОДУЛЬ :: 02</div>
+                            <h3 class="hw-title" data-i18n="hw2_title">Аэроразведка полей и мультиспектральные дроны</h3>
+                            <p class="hw-desc" data-i18n="hw2_desc">Автономные БПЛА для предварительного картирования засоренности, построения карт NDVI и выявления очагов многолетних корнеотпрысковых сорняков перед выездом опрыскивателя.</p>
+                            <ul class="hw-specs">
+                                <li><span class="spec-bullet">•</span> <span data-i18n="hw2_spec1">Аэрофотосъемка и картирование контуров полей</span></li>
+                                <li><span class="spec-bullet">•</span> <span data-i18n="hw2_spec2">Выявление очагов бодяка и осота с воздуха</span></li>
+                                <li><span class="spec-bullet">•</span> <span data-i18n="hw2_spec3">Экспорт полетных карт в бортовой компьютер</span></li>
+                            </ul>
+                            <div class="hw-tags">
+                                <span class="tag-cyan monospace">NDVI MAPPING</span>
+                                <span class="tag-cyan monospace">UAV SCOUTING</span>
+                                <span class="tag-cyan monospace">WEED HOTSPOTS</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="app" class="section-padding">
+            <div class="container">
+                <div class="section-header text-center">
+                    <div class="tech-badge badge-center">
+                        <span class="badge-code" data-i18n="sw_badge">[ МОДУЛИ ПК-СИСТЕМЫ ]</span>
+                    </div>
+                    <h2 class="section-title" data-i18n="sw_title">Полнофункциональный софт для агронома</h2>
+                    <p class="section-subtitle" data-i18n="sw_subtitle">Весь арсенал инструментов точного земледелия в едином веб-интерфейсе бортового ПК.</p>
+                </div>
+
+                <div class="showcase-stack">
+                    <div class="showcase-item">
+                        <div class="showcase-info">
+                            <div class="showcase-tag monospace" data-i18n="sw1_mod">МОДУЛЬ 01</div>
+                            <h3 class="showcase-title" data-i18n="sw1_title">Бортовой монитор 18-20 км/ч</h3>
+                            <p class="showcase-desc" data-i18n="sw1_desc">Живой видеопоток с камер штанги, визуализатор 8 секций распыла (S1-S8), прицел детекции, телеметрия скорости и порога вредоносности.</p>
+                            <div class="showcase-features">
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw1_f1">Управление 8 секциями штанги в реальном времени</span>
+                                </div>
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw1_f2">Счетчики сорняков Класса A и Класса B на 1 м2</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="showcase-device-wrapper">
+                            <div class="device-frame-container">
+                                <img src="assets/screen_monitoring.png" alt="On-Board Sprayer Terminal View" style="border-radius: 12px; width: 100%; border: 1px solid var(--border-cyan);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="showcase-item alternate">
+                        <div class="showcase-info">
+                            <div class="showcase-tag monospace" data-i18n="sw2_mod">МОДУЛЬ 02</div>
+                            <h3 class="showcase-title" data-i18n="sw2_title">Инспекция фото и расчет дозировок по ТЗ</h3>
+                            <p class="showcase-desc" data-i18n="sw2_desc">Загрузка снимков поля, мгновенный инференс YOLO, вывод аннотированного фото, классификация сорняков, определение фазы развития и расчет дозировки гербицида.</p>
+                            <div class="showcase-features">
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw2_f1">Детекция по биологическим классам (двудольные / злаковые)</span>
+                                </div>
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw2_f2">Рекомендация по норме внесения и типу гербицида</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="showcase-device-wrapper">
+                            <div class="device-frame-container">
+                                <img src="assets/screen_analysis.png" alt="Photo Inspection and Dosage Studio" style="border-radius: 12px; width: 100%; border: 1px solid var(--border-cyan);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="showcase-item">
+                        <div class="showcase-info">
+                            <div class="showcase-tag monospace" data-i18n="sw3_mod">МОДУЛЬ 03</div>
+                            <h3 class="showcase-title" data-i18n="sw3_title">Выбор гербицидов для Северного Казахстана</h3>
+                            <p class="showcase-desc" data-i18n="sw3_desc">Регламентированный подбор препаратов: 2,4-Д сложный эфир и дикамба для Класса A, граминициды (Аксиал / Пиноксаден) для Класса B, глифосат по стерне при пырее.</p>
+                            <div class="showcase-features">
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw3_f1">Привязка препарата строго к обнаруженному классу сорняка</span>
+                                </div>
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw3_f2">Защита культуры от химического стресса и ожогов</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="showcase-device-wrapper">
+                            <div class="device-frame-container">
+                                <img src="assets/screen_herbicides.png" alt="Herbicide Selection Regulations" style="border-radius: 12px; width: 100%; border: 1px solid var(--border-cyan);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="showcase-item alternate">
+                        <div class="showcase-info">
+                            <div class="showcase-tag monospace" data-i18n="sw4_mod">МОДУЛЬ 04</div>
+                            <h3 class="showcase-title" data-i18n="sw4_title">Агроном-Консультант (Офлайн + Gemini 3.1 Flash Lite)</h3>
+                            <p class="showcase-desc" data-i18n="sw4_desc">Автономная база знаний для полей без связи, а при наличии сети - интеграция с нейросетью Google Gemini 3.1 Flash Lite с предустановленным API-ключом.</p>
+                            <div class="showcase-features">
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw4_f1">Мгновенные ответы по нормам баковых смесей и защите растений</span>
+                                </div>
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw4_f2">Бесшовное переключение между режимами Online и Offline</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="showcase-device-wrapper">
+                            <div class="device-frame-container">
+                                <img src="assets/screen_chat.png" alt="Agronomist AI Chat Interface" style="border-radius: 12px; width: 100%; border: 1px solid var(--border-cyan);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="showcase-item">
+                        <div class="showcase-info">
+                            <div class="showcase-tag monospace" data-i18n="sw5_mod">МОДУЛЬ 05</div>
+                            <h3 class="showcase-title" data-i18n="sw5_title">Регламент ТЗ ментора (Олжа Агро)</h3>
+                            <p class="showcase-desc" data-i18n="sw5_desc">Интерактивный экран со всеми 4 блоками менторского регламента для демонстрации жюри, агрономической службе и механизаторам.</p>
+                            <div class="showcase-features">
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw5_f1">Экономические пороги вредоносности: от 0-5 до более 15 шт/м2</span>
+                                </div>
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw5_f2">Корректировка дозировок по фазам развития сорняков</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="showcase-device-wrapper">
+                            <div class="device-frame-container">
+                                <img src="assets/screen_regulations.png" alt="Olzha Agro Mentor Specifications Screen" style="border-radius: 12px; width: 100%; border: 1px solid var(--border-cyan);">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="showcase-item alternate">
+                        <div class="showcase-info">
+                            <div class="showcase-tag monospace" data-i18n="sw6_mod">МОДУЛЬ 06</div>
+                            <h3 class="showcase-title" data-i18n="sw6_title">Карта полей GIS и конфигурация опрыскивателя</h3>
+                            <p class="showcase-desc" data-i18n="sw6_desc">Векторные контуры полей, расчет обработанной площади, калибровка рабочей скорости и параметров штанги.</p>
+                            <div class="showcase-features">
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw6_f1">Мониторинг засоренности по контурам участков</span>
+                                </div>
+                                <div class="feature-item">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span data-i18n="sw6_f2">Калибровка ширины захвата и типов распылителей</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="showcase-device-wrapper">
+                            <div class="device-frame-container">
+                                <img src="assets/screen_settings.png" alt="Sprayer Calibration and Configuration" style="border-radius: 12px; width: 100%; border: 1px solid var(--border-cyan);">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="gallery" class="section-padding section-dark-bg">
+            <div class="container">
+                <div class="section-header text-center">
+                    <div class="tech-badge badge-center">
+                        <span class="badge-code">[ БИБЛИОТЕКА И СЕМПЛЫ ]</span>
+                    </div>
+                    <h2 class="section-title" data-i18n="gallery_title">Галерея системы и библиотека сорняков</h2>
+                    <p class="section-subtitle" data-i18n="gallery_subtitle">Скриншоты реального интерфейса и примеры детекции сорной растительности.</p>
+                </div>
+
+                <div class="grid-3 cards-wrapper" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+                    <div class="glass-card card-hover" style="padding: 16px;">
+                        <img src="assets/sample_wild_oats.jpg" alt="Овсюг обыкновенный (Класс B)" style="border-radius: 8px; width: 100%; height: 200px; object-fit: cover; border: 1px solid var(--border-light);">
+                        <div style="margin-top: 12px;">
+                            <div class="monospace" style="font-size: 0.78rem; color: var(--cyan); font-weight: 700;">КЛАСС B // ЗЛАКОВЫЕ</div>
+                            <h4 style="margin: 4px 0 6px 0; font-size: 1rem;">Овсюг обыкновенный (Avena fatua)</h4>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary);">Злаковый сорняк яровых культур. Регламент СЗР: селективные граминициды (Аксиал, Пиноксаден).</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-card card-hover" style="padding: 16px;">
+                        <img src="assets/sample_perennial_thistle.jpg" alt="Бодяк полевой (Класс A)" style="border-radius: 8px; width: 100%; height: 200px; object-fit: cover; border: 1px solid var(--border-light);">
+                        <div style="margin-top: 12px;">
+                            <div class="monospace" style="font-size: 0.78rem; color: #EF4444; font-weight: 700;">КЛАСС A // МНОГОЛЕТНИК (ОПАСНО)</div>
+                            <h4 style="margin: 4px 0 6px 0; font-size: 1rem;">Бодяк полевой (Cirsium arvense)</h4>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary);">Глубокая корневая система. Порог: &gt;= 2 шт/м2 критическая угроза, баковая смесь 2,4-Д + дикамба.</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-card card-hover" style="padding: 16px;">
+                        <img src="assets/sample_fields.jpeg" alt="Картография полей" style="border-radius: 8px; width: 100%; height: 200px; object-fit: cover; border: 1px solid var(--border-light);">
+                        <div style="margin-top: 12px;">
+                            <div class="monospace" style="font-size: 0.78rem; color: var(--green); font-weight: 700;">GIS МОНИТОРИНГ // КАРТОГРАФИЯ</div>
+                            <h4 style="margin: 4px 0 6px 0; font-size: 1rem;">Спутниковые и векторные контуры</h4>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary);">Учет обработанных гектаров, история внесений и цветовая индикация засоренности участков.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="cta" class="section-padding">
+            <div class="container">
+                <div class="cta-box glass-card relative overflow-hidden">
+                    <div class="cta-glow-bg"></div>
+                    <div class="cta-content text-center relative z-10">
+                        <div class="tech-badge badge-center">
+                            <span class="badge-code" data-i18n="cta_badge">[ ГОТОВО К РАБОТЕ В ПОЛЕ ]</span>
+                        </div>
+                        <h2 class="cta-title" data-i18n="cta_title">Запустите AgroVision AI на вашем компьютере</h2>
+                        <p class="cta-subtitle" data-i18n="cta_subtitle">Запуск в 1 клик через AgroVision.exe для Windows или start_pc_system.sh для Linux/macOS. 100% бесплатно и автономно.</p>
+                        <div class="cta-btns">
+                            <a href="/" class="btn btn-cyan btn-lg magnetic-btn">
+                                <span data-i18n="cta_btn_get">Открыть систему (localhost:8000)</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </a>
+                            <a href="https://github.com/murzakhmetov/agrovision" target="_blank" class="btn btn-glass btn-lg magnetic-btn">
+                                <span data-i18n="cta_btn_github">Репозиторий на GitHub</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container footer-container">
+            <div class="footer-top">
+                <div class="footer-brand">
+                    <a href="#" class="nav-logo">
+                        <div class="logo-icon">
+                            <span class="beacon-dot"></span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        </div>
+                        <span class="logo-text">AgroVision<span class="logo-accent">.AI</span></span>
+                    </a>
+                    <p class="footer-desc" data-i18n="footer_desc">Бортовой компьютер опрыскивателя по регламенту ТЗ агрономической службы Олжа Агро (Костанайская область).</p>
+                </div>
+
+                <div class="footer-ticker monospace">
+                    <span class="ticker-dot green"></span>
+                    <span class="ticker-text" data-i18n="footer_ticker">СТАТУС: СИСТЕМА ГОТОВА К ПОЛЮ | СКОРОСТЬ: 18-20 КМ/Ч | CV: YOLOv8s + YOLO11n | ИИ: GEMINI 3.1 FLASH LITE</span>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <div class="footer-copy monospace" data-i18n="footer_copy">
+                    2026 AgroVision AI. Все права защищены.
+                </div>
+                <div class="footer-links monospace">
+                    <a href="#how" data-i18n="footer_privacy">РЕГЛАМЕНТ ТЗ</a>
+                    <a href="#app" data-i18n="footer_terms">ОЛЖА АГРО</a>
+                    <a href="/" data-i18n="footer_diag">ОФФЛАЙН БОРТ</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="translations.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
