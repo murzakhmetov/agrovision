@@ -465,7 +465,31 @@
                     </form>
                 </div>
 
-                <div>
+                <div class="glass-card">
+                    <div class="card-title">
+                        <span>Облачная ИИ-Модель (Google Gemini AI)</span>
+                    </div>
+
+                    <form id="gemini-settings-form" style="display: flex; flex-direction: column; gap: 18px;">
+                        <div>
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Gemini API Key</label>
+                            <input type="text" id="gemini-api-key-input" placeholder="Ключ активирован в системе" class="chat-input" style="width: 100%; font-family: var(--font-mono); font-size: 0.8rem;" />
+                            <span style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 4px; display: block;">Ключ для онлайн-консультаций агронома через облако</span>
+                        </div>
+
+                        <div>
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Модель нейросети</label>
+                            <input type="text" id="gemini-model-input" value="gemini-3.1-flash-lite" class="chat-input" style="width: 100%; font-family: var(--font-mono); font-size: 0.85rem;" />
+                            <span style="font-size: 0.75rem; color: var(--accent); margin-top: 4px; display: block;">Установлена скоростная модель: gemini-3.1-flash-lite</span>
+                        </div>
+
+                        <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
+                            <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Статус облачной синхронизации</div>
+                            <div style="font-size: 0.78rem; color: var(--text-secondary);">В режиме ONLINE запросы в чате обрабатываются через Gemini AI с интеграцией регламентов Олжа Агро. В режиме OFFLINE система работает автономно.</div>
+                        </div>
+
+                        <button type="submit" class="analysis-btn" style="margin-top: 8px;">Сохранить параметры Gemini AI</button>
+                    </form>
                 </div>
             </div>
         </section>

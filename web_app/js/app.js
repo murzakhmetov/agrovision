@@ -9,6 +9,7 @@ class AppState {
         this.bindNavigation();
         this.bindModeToggle();
         this.bindModals();
+        this.loadAiSettings();
         this.fetchWeather();
         this.initLanguage();
         this.applyMode(this.mode);
@@ -105,6 +106,44 @@ class AppState {
                 e.preventDefault();
                 alert('Параметры опрыскивателя сохранены в бортовой компьютер!');
             });
+        }
+
+        const geminiForm = document.getElementById('gemini-settings-form');
+        if (geminiForm) {
+            geminiForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const keyInput = document.getElementById('gemini-api-key-input');
+                const modelInput = document.getElementById('gemini-model-input');
+                try {
+                    const resp = await fetch('/api/settings/ai', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            api_key: keyInput ? keyInput.value.trim() : '',
+                            model: modelInput ? modelInput.value.trim() : ''
+                        })
+                    });
+                    if (resp.ok) {
+                        alert('Конфигурация Gemini AI успешно сохранена!');
+                    }
+                } catch (err) {
+                    alert('Ошибка при сохранении параметров Gemini AI');
+                }
+            });
+        }
+    }
+
+    async loadAiSettings() {
+        try {
+            const resp = await fetch('/api/settings/ai');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const keyInput = document.getElementById('gemini-api-key-input');
+            const modelInput = document.getElementById('gemini-model-input');
+            if (keyInput && data.api_key) keyInput.value = data.api_key;
+            if (modelInput && data.model) modelInput.value = data.model;
+        } catch (e) {
+            console.error(e);
         }
     }
 

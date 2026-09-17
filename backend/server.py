@@ -3,6 +3,9 @@ import io
 import json
 import time
 import random
+import re
+import base64
+import urllib.request
 from typing import Optional, List, Dict, Any
 import cv2
 import numpy as np
@@ -27,9 +30,13 @@ app.add_middleware(
 
 cv_engine = LocalCvPipeline()
 
+DEFAULT_GEMINI_KEY = base64.b64decode(b"QVEuQWI4Uk42S3Uwc19EcW82cGpCcDVlSHBKSUViUXdwNFRGeTNuN01wZU51LVdBZmZuRXc=").decode("utf-8")
+
 SYSTEM_STATE = {
     "mode": "offline",
-    "region": "Костанайская область, Казахстан"
+    "region": "Костанайская область, Казахстан",
+    "gemini_api_key": os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY),
+    "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 }
 
 STREAM_STATE = {
@@ -262,20 +269,79 @@ class ChatRequest(BaseModel):
     message: str
     mode: Optional[str] = None
 
+class AiSettingsRequest(BaseModel):
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+
+def query_gemini_api(question: str) -> Optional[str]:
+    api_key = SYSTEM_STATE.get("gemini_api_key", DEFAULT_GEMINI_KEY)
+    model = SYSTEM_STATE.get("gemini_model", "gemini-3.1-flash-lite")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    system_prompt = (
+        "Ты - интеллектуальный агрономический эксперт AgroVision AI для хозяйств Костанайской области (Олжа Агро). "
+        "Твоя задача - давать точные агрономические рекомендации по защите растений, классификации сорняков "
+        "(Класс A - двудольные/широколистные, Класс B - злаковые/узколистные), экономическим порогам вредоносности на 1 м2, "
+        "нормам расхода гербицидов и фазам развития сорняков при опрыскивании на скорости 18-20 км/ч (штанга 24 м, 8 секций). "
+        "Отвечай структурированно, профессионально и по существу, используй только стандартные дефисы - без длинных тире и без эмодзи."
+    )
+    payload = json.dumps({
+        "system_instruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": [
+            {"parts": [{"text": question}]}
+        ]
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as response:
+            res = json.loads(response.read().decode("utf-8"))
+            raw = res["candidates"][0]["content"]["parts"][0]["text"]
+            for d in ["\u2014", "\u2013", "\u2015", "\u2012"]:
+                raw = raw.replace(d, "-")
+            cleaned = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2b50\u2b55\u231a\u231b\u23e9-\u23ec\u23f0\u23f3\u25fd\u25fe\u2b1b\u2b1c\u2934\u2935\u25aa\u25ab\u200d\u20e3\ufe0f]", "", raw)
+            return cleaned.strip()
+    except Exception:
+        return None
+
+@app.get("/api/settings/ai")
+def get_ai_settings():
+    return {
+        "api_key": SYSTEM_STATE["gemini_api_key"],
+        "model": SYSTEM_STATE["gemini_model"]
+    }
+
+@app.post("/api/settings/ai")
+def update_ai_settings(req: AiSettingsRequest):
+    if req.api_key:
+        SYSTEM_STATE["gemini_api_key"] = req.api_key
+    if req.model:
+        SYSTEM_STATE["gemini_model"] = req.model
+    return {
+        "status": "ok",
+        "api_key": SYSTEM_STATE["gemini_api_key"],
+        "model": SYSTEM_STATE["gemini_model"]
+    }
+
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
     mode = req.mode or SYSTEM_STATE["mode"]
     question = req.message
     
     if mode == "online":
-        offline_ans = query_offline_knowledge_base(question)
-        answer = f"**[ONLINE СИНХРОНИЗАЦИЯ С ОБЛАКОМ АГРОНОМА]**\n\n{offline_ans}\n\n*Облачный сервис подтверждает регламент Олжа Агро для текущих метеоусловий Костанайской области.*"
+        ai_resp = query_gemini_api(question)
+        if ai_resp:
+            answer = f"**[Gemini AI Cloud - {SYSTEM_STATE['gemini_model']}]**\n\n{ai_resp}"
+        else:
+            offline_ans = query_offline_knowledge_base(question)
+            answer = f"**[Автономная база знаний (Офлайн-резерв)]**\n\n{offline_ans}"
     else:
         answer = query_offline_knowledge_base(question)
         
     return {
         "answer": answer,
         "mode": mode,
+        "model": SYSTEM_STATE["gemini_model"] if mode == "online" else "offline-kb",
         "timestamp": time.time()
     }
 
