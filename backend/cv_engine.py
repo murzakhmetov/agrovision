@@ -1,10 +1,13 @@
-
+import logging
+import os
 import time
 import math
 import random
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 TAXONOMY = {
     "class_a": {
@@ -116,6 +119,27 @@ class AgroDecisionEngine:
         }
 
     @staticmethod
+    def model_failure_decision(model_status: str) -> Dict[str, Any]:
+        """Safe no-spray decision used when no detection model produced output.
+
+        Keeps status "low" (nozzles off, existing UI styling) but tells the
+        operator that the result is a model failure, not a clean field."""
+        title = "Модель CV недоступна" if model_status == "unavailable" else "Ошибка модели CV"
+        return {
+            "status": "low",
+            "status_title": title,
+            "action": "НЕ ОПРЫСКИВАТЬ (нет данных детекции)",
+            "spray_intensity": 0.0,
+            "spray_action": "NO_SPRAY",
+            "herbicide_norm": "Опрыскиватель выключен: нейросеть не дала результата. Проверьте модели в ml_models/ и журнал сервера.",
+            "color": "#71717A",
+            "annual_count_per_m2": 0.0,
+            "perennial_count_per_m2": 0.0,
+            "is_perennial_alert": False,
+            "model_error": True
+        }
+
+    @staticmethod
     def evaluate_phase(box_relative_area: float, aspect_ratio: float) -> Dict[str, Any]:
         if box_relative_area < 0.015:
             phase = "seedling_2leaves"
@@ -154,25 +178,43 @@ class AgroDecisionEngine:
 
 class LocalCvPipeline:
 
+    # Minimum seconds between repeated error logs for the same model, so a
+    # broken model does not flood the log at stream frame rate.
+    ERROR_LOG_INTERVAL_S = 10.0
+
     def __init__(self, model_cropandweed: str = "ml_models/weedblaster-cropandweed-yolov8s.pt",
                  model_broadleaf: str = "ml_models/broadleaf-yolo11n.pt"):
         self.yolo_cropandweed = None
         self.yolo_broadleaf = None
         self.is_ready = False
+        self.load_error: Optional[str] = None
         self.active_model_name = "YOLOv8s CropAndWeed + YOLO11n Broadleaf"
+        self._last_error_log: Dict[str, float] = {}
         
         try:
             from ultralytics import YOLO
-            import os
             if os.path.exists(model_cropandweed):
                 self.yolo_cropandweed = YOLO(model_cropandweed)
                 print(f"[CV Engine] Loaded CropAndWeed model: {model_cropandweed}")
+            else:
+                logger.warning("[CV Engine] CropAndWeed model not found: %s", model_cropandweed)
             if os.path.exists(model_broadleaf):
                 self.yolo_broadleaf = YOLO(model_broadleaf)
                 print(f"[CV Engine] Loaded Broadleaf model: {model_broadleaf}")
-            self.is_ready = True
+            else:
+                logger.warning("[CV Engine] Broadleaf model not found: %s", model_broadleaf)
         except Exception as e:
-            print(f"[CV Engine] Warning during model initialization: {e}")
+            self.load_error = f"{type(e).__name__}: {e}"
+            logger.error("[CV Engine] Model initialization failed: %s", self.load_error)
+        self.is_ready = self.yolo_cropandweed is not None or self.yolo_broadleaf is not None
+        if not self.is_ready:
+            logger.error("[CV Engine] No detection model loaded; detections will be empty")
+
+    def _log_model_error(self, model_name: str, exc: Exception) -> None:
+        now = time.time()
+        if now - self._last_error_log.get(model_name, 0.0) >= self.ERROR_LOG_INTERVAL_S:
+            self._last_error_log[model_name] = now
+            logger.error("[CV Engine] %s inference failed", model_name, exc_info=exc)
 
     def process_frame(self, frame_bgr: np.ndarray, conf_threshold: float = 0.25, 
                       boom_sections_count: int = 8, is_stream: bool = False) -> Dict[str, Any]:
@@ -180,6 +222,8 @@ class LocalCvPipeline:
         h, w = frame_bgr.shape[:2]
         
         raw_boxes = []
+        model_errors: List[str] = []
+        models_ok = 0
         
         if self.yolo_cropandweed is not None:
             try:
@@ -195,8 +239,10 @@ class LocalCvPipeline:
                             "conf": conf,
                             "raw_class": c_name
                         })
+                models_ok += 1
             except Exception as e:
-                pass
+                self._log_model_error("CropAndWeed", e)
+                model_errors.append(f"CropAndWeed: {type(e).__name__}: {e}")
 
         if self.yolo_broadleaf is not None:
             try:
@@ -210,11 +256,23 @@ class LocalCvPipeline:
                             "conf": conf,
                             "raw_class": "Weed_Broadleaf"
                         })
+                models_ok += 1
             except Exception as e:
-                pass
+                self._log_model_error("Broadleaf", e)
+                model_errors.append(f"Broadleaf: {type(e).__name__}: {e}")
 
-        if len(raw_boxes) == 0:
-            raw_boxes = self._extract_field_contours_or_mock(frame_bgr)
+        # No fabricated detections: if the models find nothing (or fail), the
+        # result is empty and model_status tells the caller why.
+        if not self.is_ready:
+            model_status = "unavailable"
+            if self.load_error:
+                model_errors.append(self.load_error)
+        elif models_ok == 0:
+            model_status = "error"
+        elif model_errors:
+            model_status = "degraded"
+        else:
+            model_status = "ok"
 
         detections = []
         annual_count = 0
@@ -230,7 +288,7 @@ class LocalCvPipeline:
             aspect = bh / bw
 
             raw_c = item["raw_class"]
-            is_crop = (raw_c in ["Crop", "Maize"]) and not item.get("forced_perennial", False)
+            is_crop = raw_c in ["Crop", "Maize"]
             
             if is_crop:
                 obj = {
@@ -245,7 +303,7 @@ class LocalCvPipeline:
                 continue
 
             is_broadleaf = (aspect < 1.45)
-            is_perennial = (rel_area > 0.025 and (aspect < 1.2 or aspect > 1.8)) or (item.get("forced_perennial", False))
+            is_perennial = rel_area > 0.025 and (aspect < 1.2 or aspect > 1.8)
             
             if is_broadleaf:
                 weed_class = "A"
@@ -307,6 +365,8 @@ class LocalCvPipeline:
         perennial_per_m2 = perennial_count / camera_coverage_m2
 
         decision = AgroDecisionEngine.evaluate_threshold(annual_per_m2, perennial_per_m2)
+        if model_status in ("error", "unavailable"):
+            decision = AgroDecisionEngine.model_failure_decision(model_status)
 
         boom_nozzles = []
         for i in range(boom_sections_count):
@@ -345,43 +405,11 @@ class LocalCvPipeline:
             "active_nozzles_count": active_nozzle_count,
             "herbicide_saved_pct": herbicide_saved_pct,
             "detections": detections,
+            "model_status": model_status,
+            "model_errors": model_errors,
             "sprayer_speed_kmh": round(random.uniform(18.8, 19.6), 1),
             "timestamp": time.time()
         }
-
-    def _extract_field_contours_or_mock(self, frame_bgr: np.ndarray) -> List[Dict[str, Any]]:
-        h, w = frame_bgr.shape[:2]
-        boxes = []
-        try:
-            hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-            lower_green = np.array([25, 40, 40])
-            upper_green = np.array([85, 255, 255])
-            mask = cv2.inRange(hsv, lower_green, upper_green)
-            
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if 200 < area < (w * h * 0.4):
-                    x, y, bw, bh = cv2.boundingRect(cnt)
-                    conf = min(0.92, 0.45 + (area / (w * h)) * 5.0)
-                    boxes.append({
-                        "bbox": [float(x), float(y), float(x + bw), float(y + bh)],
-                        "conf": float(conf),
-                        "raw_class": "Weed"
-                    })
-                    if len(boxes) >= 8:
-                        break
-        except Exception:
-            pass
-
-        if not boxes:
-            boxes = [
-                {"bbox": [w * 0.15, h * 0.35, w * 0.30, h * 0.55], "conf": 0.88, "raw_class": "Weed", "forced_perennial": True},
-                {"bbox": [w * 0.55, h * 0.20, w * 0.68, h * 0.38], "conf": 0.81, "raw_class": "Weed", "forced_perennial": False},
-                {"bbox": [w * 0.75, h * 0.60, w * 0.88, h * 0.78], "conf": 0.74, "raw_class": "Weed", "forced_perennial": False},
-                {"bbox": [w * 0.35, h * 0.65, w * 0.48, h * 0.82], "conf": 0.79, "raw_class": "Sunflower"}
-            ]
-        return boxes
 
 def draw_detections_on_image(image_bgr: np.ndarray, result: Dict[str, Any]) -> np.ndarray:
     img = image_bgr.copy()

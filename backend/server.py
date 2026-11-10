@@ -544,6 +544,7 @@ def get_telemetry():
         "class_b_count": last_res.get("class_b_count", 0),
         "annual_count": last_res.get("annual_count", 0),
         "perennial_count": last_res.get("perennial_count", 0),
+        "model_status": last_res.get("model_status", "ok" if cv_engine.is_ready else "unavailable"),
         "offline_mode": (SYSTEM_STATE["mode"] == "offline"),
         "system_mode": SYSTEM_STATE["mode"],
         "region": SYSTEM_STATE["region"],
