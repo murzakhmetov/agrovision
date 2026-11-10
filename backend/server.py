@@ -406,22 +406,49 @@ def video_feed():
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
+UPLOAD_DIR = os.path.abspath("uploads")
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mkv", ".webm", ".mov", ".m4v"}
+
+def safe_upload_path(filename: Optional[str]) -> Optional[str]:
+    """Return an absolute path inside UPLOAD_DIR for an uploaded file name,
+    or None if the name is empty, not a video, or escapes the upload dir."""
+    if not filename:
+        return None
+    # Strip any client-supplied directories (both POSIX and Windows separators).
+    name = os.path.basename(filename.replace("\\", "/")).strip()
+    if name in ("", ".", ".."):
+        return None
+    if os.path.splitext(name)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        return None
+    path = os.path.abspath(os.path.join(UPLOAD_DIR, name))
+    if os.path.dirname(path) != UPLOAD_DIR:
+        return None
+    return path
+
 @app.post("/api/cv/upload-video")
 async def upload_custom_video(file: UploadFile = File(...)):
-    os.makedirs("uploads", exist_ok=True)
-    save_path = os.path.join("uploads", file.filename)
+    save_path = safe_upload_path(file.filename)
+    if save_path is None:
+        allowed = ", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS))
+        return JSONResponse(
+            {"error": f"Недопустимое имя файла. Разрешены видеофайлы: {allowed}"},
+            status_code=400
+        )
+    filename = os.path.basename(save_path)
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     with open(save_path, "wb") as f:
         f.write(await file.read())
     
     STREAM_STATE["video_path"] = save_path
-    STREAM_STATE["video_filename"] = file.filename
+    STREAM_STATE["video_filename"] = filename
     STREAM_STATE["source_type"] = "video"
     STREAM_STATE["current_speed"] = 19.4
     
     return {
         "status": "ok",
-        "filename": file.filename,
-        "message": f"Видеозапись {file.filename} загружена в бортовой компьютер"
+        "filename": filename,
+        "message": f"Видеозапись {filename} загружена в бортовой компьютер"
     }
 
 @app.post("/api/cv/clear-video")
