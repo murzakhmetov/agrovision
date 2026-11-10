@@ -137,75 +137,112 @@ def draw_standby_frame() -> np.ndarray:
 
     return frame
 
+_STANDBY_FRAME: Optional[np.ndarray] = None
+
+def get_standby_frame() -> np.ndarray:
+    """The standby frame is static, so render it once and reuse it."""
+    global _STANDBY_FRAME
+    if _STANDBY_FRAME is None:
+        _STANDBY_FRAME = draw_standby_frame()
+    return _STANDBY_FRAME
+
+STREAM_FRAME_INTERVAL_S = 0.033
+# After this many consecutive failed reads (each including a rewind attempt)
+# the video is treated as undecodable and only retried after a backoff.
+MAX_VIDEO_READ_FAILURES = 5
+VIDEO_RETRY_BACKOFF_S = 2.0
+
+def read_looping_video_frame(cap) -> Optional[np.ndarray]:
+    """Read the next frame, rewinding once at end of file. None if undecodable."""
+    if not cap.isOpened():
+        return None
+    ret, frame = cap.read()
+    if not ret:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        ret, frame = cap.read()
+    return frame if ret else None
+
 def generate_video_stream():
     cap = None
     current_path = None
+    read_failures = 0
+    retry_at = 0.0
     frame_counter = 0
     cached_result = None
 
-    while True:
-        src = STREAM_STATE["source_type"]
-        target_path = STREAM_STATE.get("video_path")
+    def release_capture():
+        nonlocal cap, current_path
+        if cap is not None:
+            cap.release()
+        cap = None
+        current_path = None
 
-        if src == "video" and target_path and os.path.exists(target_path):
-            if cap is None or current_path != target_path:
+    try:
+        while True:
+            src = STREAM_STATE["source_type"]
+            target_path = STREAM_STATE.get("video_path")
+            frame = None  # None -> no live frame, show the standby screen
+
+            if src == "video" and target_path and os.path.exists(target_path):
+                if current_path != target_path:
+                    release_capture()
+                    read_failures = 0
+                    retry_at = 0.0
+                if cap is None and time.time() >= retry_at:
+                    cap = cv2.VideoCapture(target_path)
+                    current_path = target_path
+
                 if cap is not None:
-                    cap.release()
-                cap = cv2.VideoCapture(target_path)
-                current_path = target_path
-            
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
+                    frame = read_looping_video_frame(cap)
+                    if frame is not None:
+                        read_failures = 0
+                    else:
+                        read_failures += 1
+                        if read_failures >= MAX_VIDEO_READ_FAILURES:
+                            print(f"[Stream] Cannot decode video {target_path}; "
+                                  f"retrying in {VIDEO_RETRY_BACKOFF_S:.0f}s")
+                            cap.release()
+                            cap = None  # keep current_path so the backoff applies
+                            read_failures = 0
+                            retry_at = time.time() + VIDEO_RETRY_BACKOFF_S
+            elif src == "webcam":
+                if current_path != "webcam":
+                    release_capture()
+                    cap = cv2.VideoCapture(0)
+                    current_path = "webcam"
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        frame = None
             else:
-                frame = draw_standby_frame()
-        elif src == "webcam":
-            if cap is None or current_path != "webcam":
-                if cap is not None:
-                    cap.release()
-                cap = cv2.VideoCapture(0)
-                current_path = "webcam"
+                release_capture()
 
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    frame = draw_standby_frame()
+            if src in ("video", "webcam") and frame is not None:
+                STREAM_STATE["current_speed"] = round(19.2 + random.uniform(-0.5, 0.5), 1)
+                frame_counter += 1
+                if frame_counter % 2 == 1 or cached_result is None:
+                    cached_result = cv_engine.process_frame(
+                        frame, 
+                        conf_threshold=0.25, 
+                        boom_sections_count=STREAM_STATE["boom_sections"],
+                        is_stream=True
+                    )
+                    STREAM_STATE["last_result"] = cached_result
+
+                annotated = draw_detections_on_image(frame, cached_result)
             else:
-                frame = draw_standby_frame()
-        else:
-            if cap is not None:
-                cap.release()
-                cap = None
-                current_path = None
-            frame = draw_standby_frame()
+                STREAM_STATE["current_speed"] = 0.0
+                annotated = get_standby_frame()
 
-        if src in ["video", "webcam"] and frame is not None and not np.array_equal(frame, draw_standby_frame()):
-            STREAM_STATE["current_speed"] = round(19.2 + random.uniform(-0.5, 0.5), 1)
-            frame_counter += 1
-            if frame_counter % 2 == 1 or cached_result is None:
-                cached_result = cv_engine.process_frame(
-                    frame, 
-                    conf_threshold=0.25, 
-                    boom_sections_count=STREAM_STATE["boom_sections"],
-                    is_stream=True
-                )
-                STREAM_STATE["last_result"] = cached_result
+            ok, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            if ok:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
 
-            annotated = draw_detections_on_image(frame, cached_result)
-        else:
-            STREAM_STATE["current_speed"] = 0.0
-            annotated = frame
-
-        ret, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
-        if not ret:
-            continue
-            
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
-        
-        time.sleep(0.033)
+            time.sleep(STREAM_FRAME_INTERVAL_S)
+    finally:
+        # Runs when the client disconnects and the generator is closed.
+        release_capture()
 
 @app.get("/api/mode")
 def get_mode():
