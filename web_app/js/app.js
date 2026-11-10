@@ -125,6 +125,7 @@ class AppState {
                     });
                     if (resp.ok) {
                         alert('Конфигурация Gemini AI успешно сохранена!');
+                        this.loadAiSettings();
                     }
                 } catch (err) {
                     alert('Ошибка при сохранении параметров Gemini AI');
@@ -140,7 +141,13 @@ class AppState {
             const data = await resp.json();
             const keyInput = document.getElementById('gemini-api-key-input');
             const modelInput = document.getElementById('gemini-model-input');
-            if (keyInput && data.api_key) keyInput.value = data.api_key;
+            // The server never returns the raw key; show only whether one is set.
+            if (keyInput) {
+                keyInput.value = '';
+                keyInput.placeholder = data.has_key
+                    ? `Ключ активирован в системе (${data.api_key_masked})`
+                    : 'Ключ не задан: укажите GEMINI_API_KEY или введите ключ';
+            }
             if (modelInput && data.model) modelInput.value = data.model;
         } catch (e) {
             console.error(e);

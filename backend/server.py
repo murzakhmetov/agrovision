@@ -18,11 +18,28 @@ from pydantic import BaseModel
 from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
 from backend.offline_kb import query_offline_knowledge_base
 
+try:
+    # Optional: load GEMINI_API_KEY etc. from a local, gitignored .env file.
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 app = FastAPI(title="AgroVision AI - Desktop PC Sprayer System", version="3.2.0")
+
+# The bundled web app is served by this same server (same origin), so CORS only
+# matters for third-party front-ends. Override with a comma-separated list in
+# AGROVISION_CORS_ORIGINS.
+DEFAULT_CORS_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("AGROVISION_CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if o.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,12 +47,10 @@ app.add_middleware(
 
 cv_engine = LocalCvPipeline()
 
-DEFAULT_GEMINI_KEY = base64.b64decode(b"QVEuQWI4Uk42S3Uwc19EcW82cGpCcDVlSHBKSUViUXdwNFRGeTNuN01wZU51LVdBZmZuRXc=").decode("utf-8")
-
 SYSTEM_STATE = {
     "mode": "offline",
     "region": "Костанайская область, Казахстан",
-    "gemini_api_key": os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY),
+    "gemini_api_key": os.environ.get("GEMINI_API_KEY", "").strip(),
     "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 }
 
@@ -274,9 +289,11 @@ class AiSettingsRequest(BaseModel):
     model: Optional[str] = None
 
 def query_gemini_api(question: str) -> Optional[str]:
-    api_key = SYSTEM_STATE.get("gemini_api_key", DEFAULT_GEMINI_KEY)
+    api_key = SYSTEM_STATE.get("gemini_api_key")
+    if not api_key:
+        return None
     model = SYSTEM_STATE.get("gemini_model", "gemini-3.1-flash-lite")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     system_prompt = (
         "Ты - интеллектуальный агрономический эксперт AgroVision AI для хозяйств Костанайской области (Олжа Агро). "
         "Твоя задача - давать точные агрономические рекомендации по защите растений, классификации сорняков "
@@ -292,7 +309,11 @@ def query_gemini_api(question: str) -> Optional[str]:
             {"parts": [{"text": question}]}
         ]
     }).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+    )
     try:
         with urllib.request.urlopen(req, timeout=12) as response:
             res = json.loads(response.read().decode("utf-8"))
@@ -304,24 +325,33 @@ def query_gemini_api(question: str) -> Optional[str]:
     except Exception:
         return None
 
-@app.get("/api/settings/ai")
-def get_ai_settings():
+def mask_api_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return f"{key[:4]}...{key[-4:]}"
+
+def public_ai_settings() -> Dict[str, Any]:
+    """AI settings safe to send to the browser: never includes the raw key."""
+    key = SYSTEM_STATE["gemini_api_key"]
     return {
-        "api_key": SYSTEM_STATE["gemini_api_key"],
+        "has_key": bool(key),
+        "api_key_masked": mask_api_key(key),
         "model": SYSTEM_STATE["gemini_model"]
     }
 
+@app.get("/api/settings/ai")
+def get_ai_settings():
+    return public_ai_settings()
+
 @app.post("/api/settings/ai")
 def update_ai_settings(req: AiSettingsRequest):
-    if req.api_key:
-        SYSTEM_STATE["gemini_api_key"] = req.api_key
+    if req.api_key and req.api_key.strip():
+        SYSTEM_STATE["gemini_api_key"] = req.api_key.strip()
     if req.model:
         SYSTEM_STATE["gemini_model"] = req.model
-    return {
-        "status": "ok",
-        "api_key": SYSTEM_STATE["gemini_api_key"],
-        "model": SYSTEM_STATE["gemini_model"]
-    }
+    return {"status": "ok", **public_ai_settings()}
 
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
