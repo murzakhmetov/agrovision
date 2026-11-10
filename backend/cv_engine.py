@@ -66,6 +66,23 @@ TAXONOMY = {
 
 CROPS = ["Пшеница яровая", "Ячмень", "Подсолнечник", "Кукуруза", "Рапс"]
 
+# Crop classes of ml_models/weedblaster-cropandweed-yolov8s.pt, taken from the
+# model's embedded `names`: Maize, Sugar beet, Soy, Sunflower, Potato, Pea,
+# Bean, Pumpkin, Weed (the broadleaf model has a single "weed" class). "Crop" is
+# kept for models with a generic crop class. Override with a comma-separated
+# AGROVISION_CROP_CLASSES when swapping in a model with different classes.
+DEFAULT_CROP_CLASSES = ("Maize", "Sugar beet", "Soy", "Sunflower", "Potato", "Pea", "Bean", "Pumpkin", "Crop")
+
+def load_crop_classes() -> frozenset:
+    raw = os.environ.get("AGROVISION_CROP_CLASSES")
+    names = raw.split(",") if raw else DEFAULT_CROP_CLASSES
+    return frozenset(n.strip().lower() for n in names if n.strip())
+
+CROP_CLASSES = load_crop_classes()
+
+def is_crop_class(raw_class: str) -> bool:
+    return raw_class.strip().lower() in CROP_CLASSES
+
 class AgroDecisionEngine:
     
     @staticmethod
@@ -196,6 +213,11 @@ class LocalCvPipeline:
             if os.path.exists(model_cropandweed):
                 self.yolo_cropandweed = YOLO(model_cropandweed)
                 print(f"[CV Engine] Loaded CropAndWeed model: {model_cropandweed}")
+                unknown = [n for n in self.yolo_cropandweed.names.values()
+                           if not is_crop_class(n) and "weed" not in n.lower()]
+                if unknown:
+                    logger.warning("[CV Engine] Classes not in AGROVISION_CROP_CLASSES "
+                                   "will be treated as weeds: %s", unknown)
             else:
                 logger.warning("[CV Engine] CropAndWeed model not found: %s", model_cropandweed)
             if os.path.exists(model_broadleaf):
@@ -288,7 +310,7 @@ class LocalCvPipeline:
             aspect = bh / bw
 
             raw_c = item["raw_class"]
-            is_crop = raw_c in ["Crop", "Maize"]
+            is_crop = is_crop_class(raw_c)
             
             if is_crop:
                 obj = {

@@ -15,15 +15,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
 
-from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
-from backend.offline_kb import query_offline_knowledge_base
-
 try:
     # Optional: load GEMINI_API_KEY etc. from a local, gitignored .env file.
+    # Must run before importing backend modules that read the environment.
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
+
+from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
+from backend.offline_kb import query_offline_knowledge_base
 
 app = FastAPI(title="AgroVision AI - Desktop PC Sprayer System", version="3.2.0")
 
