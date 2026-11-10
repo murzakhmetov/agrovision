@@ -1,18 +1,17 @@
 import os
-import io
 import json
 import time
 import random
 import re
 import base64
 import urllib.request
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
 try:
@@ -327,22 +326,32 @@ class AiSettingsRequest(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
 
+GEMINI_SYSTEM_PROMPT = (
+    "Ты - интеллектуальный агрономический эксперт AgroVision AI для хозяйств Костанайской области (Олжа Агро). "
+    "Твоя задача - давать точные агрономические рекомендации по защите растений, классификации сорняков "
+    "(Класс A - двудольные/широколистные, Класс B - злаковые/узколистные), экономическим порогам вредоносности на 1 м2, "
+    "нормам расхода гербицидов и фазам развития сорняков при опрыскивании на скорости 18-20 км/ч (штанга 24 м, 8 секций). "
+    "Отвечай структурированно, профессионально и по существу, используй только стандартные дефисы - без длинных тире и без эмодзи."
+)
+
+_LONG_DASHES = ("\u2014", "\u2013", "\u2015", "\u2012")
+_EMOJI_RE = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2b50\u2b55\u231a\u231b\u23e9-\u23ec\u23f0\u23f3\u25fd\u25fe\u2b1b\u2b1c\u2934\u2935\u25aa\u25ab\u200d\u20e3\ufe0f]")
+
+def clean_ai_text(text: str) -> str:
+    """Replace long dashes with hyphens and strip emoji, per the UI style."""
+    for d in _LONG_DASHES:
+        text = text.replace(d, "-")
+    return _EMOJI_RE.sub("", text).strip()
+
 def query_gemini_api(question: str) -> Optional[str]:
     api_key = SYSTEM_STATE.get("gemini_api_key")
     if not api_key:
         return None
     model = SYSTEM_STATE.get("gemini_model", "gemini-3.1-flash-lite")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    system_prompt = (
-        "Ты - интеллектуальный агрономический эксперт AgroVision AI для хозяйств Костанайской области (Олжа Агро). "
-        "Твоя задача - давать точные агрономические рекомендации по защите растений, классификации сорняков "
-        "(Класс A - двудольные/широколистные, Класс B - злаковые/узколистные), экономическим порогам вредоносности на 1 м2, "
-        "нормам расхода гербицидов и фазам развития сорняков при опрыскивании на скорости 18-20 км/ч (штанга 24 м, 8 секций). "
-        "Отвечай структурированно, профессионально и по существу, используй только стандартные дефисы - без длинных тире и без эмодзи."
-    )
     payload = json.dumps({
         "system_instruction": {
-            "parts": [{"text": system_prompt}]
+            "parts": [{"text": GEMINI_SYSTEM_PROMPT}]
         },
         "contents": [
             {"parts": [{"text": question}]}
@@ -356,11 +365,7 @@ def query_gemini_api(question: str) -> Optional[str]:
     try:
         with urllib.request.urlopen(req, timeout=12) as response:
             res = json.loads(response.read().decode("utf-8"))
-            raw = res["candidates"][0]["content"]["parts"][0]["text"]
-            for d in ["\u2014", "\u2013", "\u2015", "\u2012"]:
-                raw = raw.replace(d, "-")
-            cleaned = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2b50\u2b55\u231a\u231b\u23e9-\u23ec\u23f0\u23f3\u25fd\u25fe\u2b1b\u2b1c\u2934\u2935\u25aa\u25ab\u200d\u20e3\ufe0f]", "", raw)
-            return cleaned.strip()
+            return clean_ai_text(res["candidates"][0]["content"]["parts"][0]["text"])
     except Exception:
         return None
 
@@ -432,7 +437,6 @@ async def detect_image(file: UploadFile = File(...), conf: float = Query(0.25)):
     
     annotated = draw_detections_on_image(img_bgr, result)
     _, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    import base64
     annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer).decode('utf-8')
     result["annotated_image"] = annotated_b64
     
@@ -506,29 +510,34 @@ def switch_source(source_type: str = Form(...)):
         STREAM_STATE["current_speed"] = 0.0
     return {"status": "ok", "source_type": source_type}
 
+STANDBY_DECISION = {
+    "status": "standby",
+    "status_title": "Режим ожидания",
+    "action": "ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ С КАМЕРЫ",
+    "herbicide_norm": "Опрыскиватель в режиме ожидания. Форсунки выключены.",
+    "color": "#71717A"
+}
+
+# Shown while moving but before the first frame has been analysed.
+NO_RESULT_DECISION = {
+    "status": "low",
+    "status_title": "Слабая засоренность",
+    "action": "НЕ ОПРЫСКИВАТЬ (Экономически невыгодно)",
+    "herbicide_norm": "Опрыскиватель выключен. Экономия 100% препарата.",
+    "color": "#34D399"
+}
+
 @app.get("/api/telemetry")
 def get_telemetry():
     last_res = STREAM_STATE.get("last_result") or {}
     speed = STREAM_STATE["current_speed"]
     
     if speed == 0.0:
-        decision = {
-            "status": "standby",
-            "status_title": "Режим ожидания",
-            "action": "ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ С КАМЕРЫ",
-            "herbicide_norm": "Опрыскиватель в режиме ожидания. Форсунки выключены.",
-            "color": "#71717A"
-        }
+        decision = STANDBY_DECISION
         active_nozzles = [{"section_id": i + 1, "active": False, "weed_count": 0} for i in range(8)]
         saved_pct = 100.0
     else:
-        decision = last_res.get("decision", {
-            "status": "low",
-            "status_title": "Слабая засоренность",
-            "action": "НЕ ОПРЫСКИВАТЬ (Экономически невыгодно)",
-            "herbicide_norm": "Опрыскиватель выключен. Экономия 100% препарата.",
-            "color": "#34D399"
-        })
+        decision = last_res.get("decision", NO_RESULT_DECISION)
         active_nozzles = last_res.get("boom_nozzles", [])
         saved_pct = last_res.get("herbicide_saved_pct", 75.0)
 
