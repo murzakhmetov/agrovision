@@ -25,6 +25,7 @@ except ImportError:
 
 from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
 from backend.offline_kb import query_offline_knowledge_base
+from backend.text_render import get_text_size, put_text
 
 app = FastAPI(title="AgroVision AI - Desktop PC Sprayer System", version="3.2.0")
 
@@ -121,20 +122,20 @@ def draw_standby_frame() -> np.ndarray:
     cv2.line(frame, (cx, cy + 50), (cx, cy + 85), (52, 211, 153), 2)
 
     title = "БОРТОВОЙ КОМПЬЮТЕР ОПРЫСКИВАТЕЛЯ (18-20 КМ/Ч)"
-    t_size, _ = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 2)
-    cv2.putText(frame, title, ((w - t_size[0]) // 2, cy + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (52, 211, 153), 2, cv2.LINE_AA)
+    t_size, _ = get_text_size(title, 0.52, 2)
+    put_text(frame, title, ((w - t_size[0]) // 2, cy + 105), 0.52, (52, 211, 153), 2)
 
     sub = "РЕЖИМ ОЖИДАНИЯ: ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ ИЛИ ВКЛЮЧИТЕ ВЕБ-КАМЕРУ"
-    s_size, _ = cv2.getTextSize(sub, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
-    cv2.putText(frame, sub, ((w - s_size[0]) // 2, cy + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (161, 161, 170), 1, cv2.LINE_AA)
+    s_size, _ = get_text_size(sub, 0.40, 1)
+    put_text(frame, sub, ((w - s_size[0]) // 2, cy + 132), 0.40, (161, 161, 170), 1)
 
     hint = "Логика ментора Олжа Агро активна | Костанайская обл."
-    h_size, _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
-    cv2.putText(frame, hint, ((w - h_size[0]) // 2, cy + 154), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (113, 113, 122), 1, cv2.LINE_AA)
+    h_size, _ = get_text_size(hint, 0.38, 1)
+    put_text(frame, hint, ((w - h_size[0]) // 2, cy + 154), 0.38, (113, 113, 122), 1)
 
     cv2.rectangle(frame, (10, h - 35), (w - 10, h - 8), (18, 22, 25), -1)
     cv2.rectangle(frame, (10, h - 35), (w - 10, h - 8), (35, 45, 55), 1)
-    cv2.putText(frame, "СКОРОСТЬ: 0.0 км/ч | ШТАНГА: 24м (8 СЕКЦИЙ) | СОПЛА: ВЫКЛЮЧЕНЫ", (20, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (52, 211, 153), 1, cv2.LINE_AA)
+    put_text(frame, "СКОРОСТЬ: 0.0 км/ч | ШТАНГА: 24м (8 СЕКЦИЙ) | СОПЛА: ВЫКЛЮЧЕНЫ", (20, h - 16), 0.40, (52, 211, 153), 1)
 
     return frame
 

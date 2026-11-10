@@ -7,6 +7,8 @@ from typing import List, Dict, Any, Optional, Tuple
 import cv2
 import numpy as np
 
+from backend.text_render import get_text_size, put_text
+
 logger = logging.getLogger(__name__)
 
 TAXONOMY = {
@@ -472,10 +474,10 @@ def draw_detections_on_image(image_bgr: np.ndarray, result: Dict[str, Any]) -> n
         cv2.line(img, (x2, y2), (x2 - corner_len, y2), (255, 255, 255), 3)
         cv2.line(img, (x2, y2), (x2, y2 - corner_len), (255, 255, 255), 3)
 
-        label_size, _ = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        label_size, _ = get_text_size(title, 0.45, 1)
         tw, th = label_size
         cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, max(th + 8, y1)), color, -1)
-        cv2.putText(img, title, (x1 + 4, max(th + 2, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
+        put_text(img, title, (x1 + 4, max(th + 2, y1 - 4)), 0.45, (0, 0, 0), 1)
 
     speed_text = f"19.2 km/h  |  FPS: {result.get('fps', 30.0)}  |  {result.get('latency_ms', 10.0)}ms"
     cv2.rectangle(img, (w - 320, 10), (w - 10, 42), (11, 13, 15), -1)
@@ -486,6 +488,6 @@ def draw_detections_on_image(image_bgr: np.ndarray, result: Dict[str, Any]) -> n
     action_text = f"РЕШЕНИЕ: {dec.get('action', '')}"
     cv2.rectangle(img, (10, h - 45), (w - 10, h - 10), (11, 13, 15), -1)
     cv2.rectangle(img, (10, h - 45), (w - 10, h - 10), (52, 211, 153), 1)
-    cv2.putText(img, action_text, (20, h - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+    put_text(img, action_text, (20, h - 22), 0.55, (255, 255, 255), 1)
 
     return img
