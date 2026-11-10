@@ -1,28 +1,46 @@
 import os
-import io
 import json
 import time
 import random
 import re
 import base64
 import urllib.request
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
+
+try:
+    # Optional: load GEMINI_API_KEY etc. from a local, gitignored .env file.
+    # Must run before importing backend modules that read the environment.
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from backend.cv_engine import LocalCvPipeline, draw_detections_on_image, TAXONOMY
 from backend.offline_kb import query_offline_knowledge_base
+from backend.text_render import get_text_size, put_text
 
 app = FastAPI(title="AgroVision AI - Desktop PC Sprayer System", version="3.2.0")
 
+# The bundled web app is served by this same server (same origin), so CORS only
+# matters for third-party front-ends. Override with a comma-separated list in
+# AGROVISION_CORS_ORIGINS.
+DEFAULT_CORS_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("AGROVISION_CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,12 +48,10 @@ app.add_middleware(
 
 cv_engine = LocalCvPipeline()
 
-DEFAULT_GEMINI_KEY = base64.b64decode(b"QVEuQWI4Uk42S3Uwc19EcW82cGpCcDVlSHBKSUViUXdwNFRGeTNuN01wZU51LVdBZmZuRXc=").decode("utf-8")
-
 SYSTEM_STATE = {
     "mode": "offline",
     "region": "Костанайская область, Казахстан",
-    "gemini_api_key": os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY),
+    "gemini_api_key": os.environ.get("GEMINI_API_KEY", "").strip(),
     "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 }
 
@@ -105,92 +121,129 @@ def draw_standby_frame() -> np.ndarray:
     cv2.line(frame, (cx, cy + 50), (cx, cy + 85), (52, 211, 153), 2)
 
     title = "БОРТОВОЙ КОМПЬЮТЕР ОПРЫСКИВАТЕЛЯ (18-20 КМ/Ч)"
-    t_size, _ = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 2)
-    cv2.putText(frame, title, ((w - t_size[0]) // 2, cy + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (52, 211, 153), 2, cv2.LINE_AA)
+    t_size, _ = get_text_size(title, 0.52, 2)
+    put_text(frame, title, ((w - t_size[0]) // 2, cy + 105), 0.52, (52, 211, 153), 2)
 
     sub = "РЕЖИМ ОЖИДАНИЯ: ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ ИЛИ ВКЛЮЧИТЕ ВЕБ-КАМЕРУ"
-    s_size, _ = cv2.getTextSize(sub, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
-    cv2.putText(frame, sub, ((w - s_size[0]) // 2, cy + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (161, 161, 170), 1, cv2.LINE_AA)
+    s_size, _ = get_text_size(sub, 0.40, 1)
+    put_text(frame, sub, ((w - s_size[0]) // 2, cy + 132), 0.40, (161, 161, 170), 1)
 
     hint = "Логика ментора Олжа Агро активна | Костанайская обл."
-    h_size, _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
-    cv2.putText(frame, hint, ((w - h_size[0]) // 2, cy + 154), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (113, 113, 122), 1, cv2.LINE_AA)
+    h_size, _ = get_text_size(hint, 0.38, 1)
+    put_text(frame, hint, ((w - h_size[0]) // 2, cy + 154), 0.38, (113, 113, 122), 1)
 
     cv2.rectangle(frame, (10, h - 35), (w - 10, h - 8), (18, 22, 25), -1)
     cv2.rectangle(frame, (10, h - 35), (w - 10, h - 8), (35, 45, 55), 1)
-    cv2.putText(frame, "СКОРОСТЬ: 0.0 км/ч | ШТАНГА: 24м (8 СЕКЦИЙ) | СОПЛА: ВЫКЛЮЧЕНЫ", (20, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (52, 211, 153), 1, cv2.LINE_AA)
+    put_text(frame, "СКОРОСТЬ: 0.0 км/ч | ШТАНГА: 24м (8 СЕКЦИЙ) | СОПЛА: ВЫКЛЮЧЕНЫ", (20, h - 16), 0.40, (52, 211, 153), 1)
 
     return frame
+
+_STANDBY_FRAME: Optional[np.ndarray] = None
+
+def get_standby_frame() -> np.ndarray:
+    """The standby frame is static, so render it once and reuse it."""
+    global _STANDBY_FRAME
+    if _STANDBY_FRAME is None:
+        _STANDBY_FRAME = draw_standby_frame()
+    return _STANDBY_FRAME
+
+STREAM_FRAME_INTERVAL_S = 0.033
+# After this many consecutive failed reads (each including a rewind attempt)
+# the video is treated as undecodable and only retried after a backoff.
+MAX_VIDEO_READ_FAILURES = 5
+VIDEO_RETRY_BACKOFF_S = 2.0
+
+def read_looping_video_frame(cap) -> Optional[np.ndarray]:
+    """Read the next frame, rewinding once at end of file. None if undecodable."""
+    if not cap.isOpened():
+        return None
+    ret, frame = cap.read()
+    if not ret:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        ret, frame = cap.read()
+    return frame if ret else None
 
 def generate_video_stream():
     cap = None
     current_path = None
+    read_failures = 0
+    retry_at = 0.0
     frame_counter = 0
     cached_result = None
 
-    while True:
-        src = STREAM_STATE["source_type"]
-        target_path = STREAM_STATE.get("video_path")
+    def release_capture():
+        nonlocal cap, current_path
+        if cap is not None:
+            cap.release()
+        cap = None
+        current_path = None
 
-        if src == "video" and target_path and os.path.exists(target_path):
-            if cap is None or current_path != target_path:
+    try:
+        while True:
+            src = STREAM_STATE["source_type"]
+            target_path = STREAM_STATE.get("video_path")
+            frame = None  # None -> no live frame, show the standby screen
+
+            if src == "video" and target_path and os.path.exists(target_path):
+                if current_path != target_path:
+                    release_capture()
+                    read_failures = 0
+                    retry_at = 0.0
+                if cap is None and time.time() >= retry_at:
+                    cap = cv2.VideoCapture(target_path)
+                    current_path = target_path
+
                 if cap is not None:
-                    cap.release()
-                cap = cv2.VideoCapture(target_path)
-                current_path = target_path
-            
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
+                    frame = read_looping_video_frame(cap)
+                    if frame is not None:
+                        read_failures = 0
+                    else:
+                        read_failures += 1
+                        if read_failures >= MAX_VIDEO_READ_FAILURES:
+                            print(f"[Stream] Cannot decode video {target_path}; "
+                                  f"retrying in {VIDEO_RETRY_BACKOFF_S:.0f}s")
+                            cap.release()
+                            cap = None  # keep current_path so the backoff applies
+                            read_failures = 0
+                            retry_at = time.time() + VIDEO_RETRY_BACKOFF_S
+            elif src == "webcam":
+                if current_path != "webcam":
+                    release_capture()
+                    cap = cv2.VideoCapture(0)
+                    current_path = "webcam"
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        frame = None
             else:
-                frame = draw_standby_frame()
-        elif src == "webcam":
-            if cap is None or current_path != "webcam":
-                if cap is not None:
-                    cap.release()
-                cap = cv2.VideoCapture(0)
-                current_path = "webcam"
+                release_capture()
 
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    frame = draw_standby_frame()
+            if src in ("video", "webcam") and frame is not None:
+                STREAM_STATE["current_speed"] = round(19.2 + random.uniform(-0.5, 0.5), 1)
+                frame_counter += 1
+                if frame_counter % 2 == 1 or cached_result is None:
+                    cached_result = cv_engine.process_frame(
+                        frame, 
+                        conf_threshold=0.25, 
+                        boom_sections_count=STREAM_STATE["boom_sections"],
+                        is_stream=True
+                    )
+                    STREAM_STATE["last_result"] = cached_result
+
+                annotated = draw_detections_on_image(frame, cached_result)
             else:
-                frame = draw_standby_frame()
-        else:
-            if cap is not None:
-                cap.release()
-                cap = None
-                current_path = None
-            frame = draw_standby_frame()
+                STREAM_STATE["current_speed"] = 0.0
+                annotated = get_standby_frame()
 
-        if src in ["video", "webcam"] and frame is not None and not np.array_equal(frame, draw_standby_frame()):
-            STREAM_STATE["current_speed"] = round(19.2 + random.uniform(-0.5, 0.5), 1)
-            frame_counter += 1
-            if frame_counter % 2 == 1 or cached_result is None:
-                cached_result = cv_engine.process_frame(
-                    frame, 
-                    conf_threshold=0.25, 
-                    boom_sections_count=STREAM_STATE["boom_sections"],
-                    is_stream=True
-                )
-                STREAM_STATE["last_result"] = cached_result
+            ok, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            if ok:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
 
-            annotated = draw_detections_on_image(frame, cached_result)
-        else:
-            STREAM_STATE["current_speed"] = 0.0
-            annotated = frame
-
-        ret, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
-        if not ret:
-            continue
-            
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
-        
-        time.sleep(0.033)
+            time.sleep(STREAM_FRAME_INTERVAL_S)
+    finally:
+        # Runs when the client disconnects and the generator is closed.
+        release_capture()
 
 @app.get("/api/mode")
 def get_mode():
@@ -273,55 +326,76 @@ class AiSettingsRequest(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
 
+GEMINI_SYSTEM_PROMPT = (
+    "Ты - интеллектуальный агрономический эксперт AgroVision AI для хозяйств Костанайской области (Олжа Агро). "
+    "Твоя задача - давать точные агрономические рекомендации по защите растений, классификации сорняков "
+    "(Класс A - двудольные/широколистные, Класс B - злаковые/узколистные), экономическим порогам вредоносности на 1 м2, "
+    "нормам расхода гербицидов и фазам развития сорняков при опрыскивании на скорости 18-20 км/ч (штанга 24 м, 8 секций). "
+    "Отвечай структурированно, профессионально и по существу, используй только стандартные дефисы - без длинных тире и без эмодзи."
+)
+
+_LONG_DASHES = ("\u2014", "\u2013", "\u2015", "\u2012")
+_EMOJI_RE = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2b50\u2b55\u231a\u231b\u23e9-\u23ec\u23f0\u23f3\u25fd\u25fe\u2b1b\u2b1c\u2934\u2935\u25aa\u25ab\u200d\u20e3\ufe0f]")
+
+def clean_ai_text(text: str) -> str:
+    """Replace long dashes with hyphens and strip emoji, per the UI style."""
+    for d in _LONG_DASHES:
+        text = text.replace(d, "-")
+    return _EMOJI_RE.sub("", text).strip()
+
 def query_gemini_api(question: str) -> Optional[str]:
-    api_key = SYSTEM_STATE.get("gemini_api_key", DEFAULT_GEMINI_KEY)
+    api_key = SYSTEM_STATE.get("gemini_api_key")
+    if not api_key:
+        return None
     model = SYSTEM_STATE.get("gemini_model", "gemini-3.1-flash-lite")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    system_prompt = (
-        "Ты - интеллектуальный агрономический эксперт AgroVision AI для хозяйств Костанайской области (Олжа Агро). "
-        "Твоя задача - давать точные агрономические рекомендации по защите растений, классификации сорняков "
-        "(Класс A - двудольные/широколистные, Класс B - злаковые/узколистные), экономическим порогам вредоносности на 1 м2, "
-        "нормам расхода гербицидов и фазам развития сорняков при опрыскивании на скорости 18-20 км/ч (штанга 24 м, 8 секций). "
-        "Отвечай структурированно, профессионально и по существу, используй только стандартные дефисы - без длинных тире и без эмодзи."
-    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = json.dumps({
         "system_instruction": {
-            "parts": [{"text": system_prompt}]
+            "parts": [{"text": GEMINI_SYSTEM_PROMPT}]
         },
         "contents": [
             {"parts": [{"text": question}]}
         ]
     }).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+    )
     try:
         with urllib.request.urlopen(req, timeout=12) as response:
             res = json.loads(response.read().decode("utf-8"))
-            raw = res["candidates"][0]["content"]["parts"][0]["text"]
-            for d in ["\u2014", "\u2013", "\u2015", "\u2012"]:
-                raw = raw.replace(d, "-")
-            cleaned = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2b50\u2b55\u231a\u231b\u23e9-\u23ec\u23f0\u23f3\u25fd\u25fe\u2b1b\u2b1c\u2934\u2935\u25aa\u25ab\u200d\u20e3\ufe0f]", "", raw)
-            return cleaned.strip()
+            return clean_ai_text(res["candidates"][0]["content"]["parts"][0]["text"])
     except Exception:
         return None
 
-@app.get("/api/settings/ai")
-def get_ai_settings():
+def mask_api_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return f"{key[:4]}...{key[-4:]}"
+
+def public_ai_settings() -> Dict[str, Any]:
+    """AI settings safe to send to the browser: never includes the raw key."""
+    key = SYSTEM_STATE["gemini_api_key"]
     return {
-        "api_key": SYSTEM_STATE["gemini_api_key"],
+        "has_key": bool(key),
+        "api_key_masked": mask_api_key(key),
         "model": SYSTEM_STATE["gemini_model"]
     }
 
+@app.get("/api/settings/ai")
+def get_ai_settings():
+    return public_ai_settings()
+
 @app.post("/api/settings/ai")
 def update_ai_settings(req: AiSettingsRequest):
-    if req.api_key:
-        SYSTEM_STATE["gemini_api_key"] = req.api_key
+    if req.api_key and req.api_key.strip():
+        SYSTEM_STATE["gemini_api_key"] = req.api_key.strip()
     if req.model:
         SYSTEM_STATE["gemini_model"] = req.model
-    return {
-        "status": "ok",
-        "api_key": SYSTEM_STATE["gemini_api_key"],
-        "model": SYSTEM_STATE["gemini_model"]
-    }
+    return {"status": "ok", **public_ai_settings()}
 
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
@@ -363,7 +437,6 @@ async def detect_image(file: UploadFile = File(...), conf: float = Query(0.25)):
     
     annotated = draw_detections_on_image(img_bgr, result)
     _, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    import base64
     annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer).decode('utf-8')
     result["annotated_image"] = annotated_b64
     
@@ -376,22 +449,49 @@ def video_feed():
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
+UPLOAD_DIR = os.path.abspath("uploads")
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mkv", ".webm", ".mov", ".m4v"}
+
+def safe_upload_path(filename: Optional[str]) -> Optional[str]:
+    """Return an absolute path inside UPLOAD_DIR for an uploaded file name,
+    or None if the name is empty, not a video, or escapes the upload dir."""
+    if not filename:
+        return None
+    # Strip any client-supplied directories (both POSIX and Windows separators).
+    name = os.path.basename(filename.replace("\\", "/")).strip()
+    if name in ("", ".", ".."):
+        return None
+    if os.path.splitext(name)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        return None
+    path = os.path.abspath(os.path.join(UPLOAD_DIR, name))
+    if os.path.dirname(path) != UPLOAD_DIR:
+        return None
+    return path
+
 @app.post("/api/cv/upload-video")
 async def upload_custom_video(file: UploadFile = File(...)):
-    os.makedirs("uploads", exist_ok=True)
-    save_path = os.path.join("uploads", file.filename)
+    save_path = safe_upload_path(file.filename)
+    if save_path is None:
+        allowed = ", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS))
+        return JSONResponse(
+            {"error": f"Недопустимое имя файла. Разрешены видеофайлы: {allowed}"},
+            status_code=400
+        )
+    filename = os.path.basename(save_path)
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     with open(save_path, "wb") as f:
         f.write(await file.read())
     
     STREAM_STATE["video_path"] = save_path
-    STREAM_STATE["video_filename"] = file.filename
+    STREAM_STATE["video_filename"] = filename
     STREAM_STATE["source_type"] = "video"
     STREAM_STATE["current_speed"] = 19.4
     
     return {
         "status": "ok",
-        "filename": file.filename,
-        "message": f"Видеозапись {file.filename} загружена в бортовой компьютер"
+        "filename": filename,
+        "message": f"Видеозапись {filename} загружена в бортовой компьютер"
     }
 
 @app.post("/api/cv/clear-video")
@@ -410,29 +510,34 @@ def switch_source(source_type: str = Form(...)):
         STREAM_STATE["current_speed"] = 0.0
     return {"status": "ok", "source_type": source_type}
 
+STANDBY_DECISION = {
+    "status": "standby",
+    "status_title": "Режим ожидания",
+    "action": "ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ С КАМЕРЫ",
+    "herbicide_norm": "Опрыскиватель в режиме ожидания. Форсунки выключены.",
+    "color": "#71717A"
+}
+
+# Shown while moving but before the first frame has been analysed.
+NO_RESULT_DECISION = {
+    "status": "low",
+    "status_title": "Слабая засоренность",
+    "action": "НЕ ОПРЫСКИВАТЬ (Экономически невыгодно)",
+    "herbicide_norm": "Опрыскиватель выключен. Экономия 100% препарата.",
+    "color": "#34D399"
+}
+
 @app.get("/api/telemetry")
 def get_telemetry():
     last_res = STREAM_STATE.get("last_result") or {}
     speed = STREAM_STATE["current_speed"]
     
     if speed == 0.0:
-        decision = {
-            "status": "standby",
-            "status_title": "Режим ожидания",
-            "action": "ЗАГРУЗИТЕ ВИДЕОЗАПИСЬ С КАМЕРЫ",
-            "herbicide_norm": "Опрыскиватель в режиме ожидания. Форсунки выключены.",
-            "color": "#71717A"
-        }
+        decision = STANDBY_DECISION
         active_nozzles = [{"section_id": i + 1, "active": False, "weed_count": 0} for i in range(8)]
         saved_pct = 100.0
     else:
-        decision = last_res.get("decision", {
-            "status": "low",
-            "status_title": "Слабая засоренность",
-            "action": "НЕ ОПРЫСКИВАТЬ (Экономически невыгодно)",
-            "herbicide_norm": "Опрыскиватель выключен. Экономия 100% препарата.",
-            "color": "#34D399"
-        })
+        decision = last_res.get("decision", NO_RESULT_DECISION)
         active_nozzles = last_res.get("boom_nozzles", [])
         saved_pct = last_res.get("herbicide_saved_pct", 75.0)
 
@@ -450,6 +555,7 @@ def get_telemetry():
         "class_b_count": last_res.get("class_b_count", 0),
         "annual_count": last_res.get("annual_count", 0),
         "perennial_count": last_res.get("perennial_count", 0),
+        "model_status": last_res.get("model_status", "ok" if cv_engine.is_ready else "unavailable"),
         "offline_mode": (SYSTEM_STATE["mode"] == "offline"),
         "system_mode": SYSTEM_STATE["mode"],
         "region": SYSTEM_STATE["region"],

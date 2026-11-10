@@ -1,10 +1,15 @@
-
+import logging
+import os
 import time
 import math
 import random
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 import cv2
 import numpy as np
+
+from backend.text_render import get_text_size, put_text
+
+logger = logging.getLogger(__name__)
 
 TAXONOMY = {
     "class_a": {
@@ -61,7 +66,22 @@ TAXONOMY = {
     }
 }
 
-CROPS = ["Пшеница яровая", "Ячмень", "Подсолнечник", "Кукуруза", "Рапс"]
+# Crop classes of ml_models/weedblaster-cropandweed-yolov8s.pt, taken from the
+# model's embedded `names`: Maize, Sugar beet, Soy, Sunflower, Potato, Pea,
+# Bean, Pumpkin, Weed (the broadleaf model has a single "weed" class). "Crop" is
+# kept for models with a generic crop class. Override with a comma-separated
+# AGROVISION_CROP_CLASSES when swapping in a model with different classes.
+DEFAULT_CROP_CLASSES = ("Maize", "Sugar beet", "Soy", "Sunflower", "Potato", "Pea", "Bean", "Pumpkin", "Crop")
+
+def load_crop_classes() -> frozenset:
+    raw = os.environ.get("AGROVISION_CROP_CLASSES")
+    names = raw.split(",") if raw else DEFAULT_CROP_CLASSES
+    return frozenset(n.strip().lower() for n in names if n.strip())
+
+CROP_CLASSES = load_crop_classes()
+
+def is_crop_class(raw_class: str) -> bool:
+    return raw_class.strip().lower() in CROP_CLASSES
 
 class AgroDecisionEngine:
     
@@ -116,6 +136,27 @@ class AgroDecisionEngine:
         }
 
     @staticmethod
+    def model_failure_decision(model_status: str) -> Dict[str, Any]:
+        """Safe no-spray decision used when no detection model produced output.
+
+        Keeps status "low" (nozzles off, existing UI styling) but tells the
+        operator that the result is a model failure, not a clean field."""
+        title = "Модель CV недоступна" if model_status == "unavailable" else "Ошибка модели CV"
+        return {
+            "status": "low",
+            "status_title": title,
+            "action": "НЕ ОПРЫСКИВАТЬ (нет данных детекции)",
+            "spray_intensity": 0.0,
+            "spray_action": "NO_SPRAY",
+            "herbicide_norm": "Опрыскиватель выключен: нейросеть не дала результата. Проверьте модели в ml_models/ и журнал сервера.",
+            "color": "#71717A",
+            "annual_count_per_m2": 0.0,
+            "perennial_count_per_m2": 0.0,
+            "is_perennial_alert": False,
+            "model_error": True
+        }
+
+    @staticmethod
     def evaluate_phase(box_relative_area: float, aspect_ratio: float) -> Dict[str, Any]:
         if box_relative_area < 0.015:
             phase = "seedling_2leaves"
@@ -154,175 +195,129 @@ class AgroDecisionEngine:
 
 class LocalCvPipeline:
 
+    # Minimum seconds between repeated error logs for the same model, so a
+    # broken model does not flood the log at stream frame rate.
+    ERROR_LOG_INTERVAL_S = 10.0
+
     def __init__(self, model_cropandweed: str = "ml_models/weedblaster-cropandweed-yolov8s.pt",
                  model_broadleaf: str = "ml_models/broadleaf-yolo11n.pt"):
         self.yolo_cropandweed = None
         self.yolo_broadleaf = None
-        self.is_ready = False
-        self.active_model_name = "YOLOv8s CropAndWeed + YOLO11n Broadleaf"
+        self.load_error: Optional[str] = None
+        self._last_error_log: Dict[str, float] = {}
         
         try:
             from ultralytics import YOLO
-            import os
             if os.path.exists(model_cropandweed):
                 self.yolo_cropandweed = YOLO(model_cropandweed)
                 print(f"[CV Engine] Loaded CropAndWeed model: {model_cropandweed}")
+                unknown = [n for n in self.yolo_cropandweed.names.values()
+                           if not is_crop_class(n) and "weed" not in n.lower()]
+                if unknown:
+                    logger.warning("[CV Engine] Classes not in AGROVISION_CROP_CLASSES "
+                                   "will be treated as weeds: %s", unknown)
+            else:
+                logger.warning("[CV Engine] CropAndWeed model not found: %s", model_cropandweed)
             if os.path.exists(model_broadleaf):
                 self.yolo_broadleaf = YOLO(model_broadleaf)
                 print(f"[CV Engine] Loaded Broadleaf model: {model_broadleaf}")
-            self.is_ready = True
+            else:
+                logger.warning("[CV Engine] Broadleaf model not found: %s", model_broadleaf)
         except Exception as e:
-            print(f"[CV Engine] Warning during model initialization: {e}")
+            self.load_error = f"{type(e).__name__}: {e}"
+            logger.error("[CV Engine] Model initialization failed: %s", self.load_error)
+        self.is_ready = self.yolo_cropandweed is not None or self.yolo_broadleaf is not None
+        if not self.is_ready:
+            logger.error("[CV Engine] No detection model loaded; detections will be empty")
+
+    def _log_model_error(self, model_name: str, exc: Exception) -> None:
+        now = time.time()
+        if now - self._last_error_log.get(model_name, 0.0) >= self.ERROR_LOG_INTERVAL_S:
+            self._last_error_log[model_name] = now
+            logger.error("[CV Engine] %s inference failed", model_name, exc_info=exc)
+
+    def _predict(self, model, frame_bgr: np.ndarray, conf_threshold: float,
+                 class_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Run one YOLO model. Boxes are labelled with the model's own class
+        names, or with `class_name` for single-purpose models."""
+        boxes = []
+        for r in model.predict(frame_bgr, conf=conf_threshold, imgsz=640, verbose=False):
+            for b in r.boxes:
+                boxes.append({
+                    "bbox": b.xyxy[0].cpu().numpy().tolist(),
+                    "conf": float(b.conf[0].item()),
+                    "raw_class": class_name or model.names.get(int(b.cls[0].item()), "Weed")
+                })
+        return boxes
+
+    def _run_models(self, frame_bgr: np.ndarray, conf_threshold: float) -> Tuple[List[Dict[str, Any]], str, List[str]]:
+        """Return (raw_boxes, model_status, model_errors).
+
+        No fabricated detections: if the models find nothing (or fail), the
+        boxes are empty and model_status tells the caller why."""
+        raw_boxes: List[Dict[str, Any]] = []
+        model_errors: List[str] = []
+        models_ok = 0
+        runs = [
+            (self.yolo_cropandweed, "CropAndWeed", None),
+            (self.yolo_broadleaf, "Broadleaf", "Weed_Broadleaf"),
+        ]
+        for model, model_name, class_name in runs:
+            if model is None:
+                continue
+            try:
+                raw_boxes.extend(self._predict(model, frame_bgr, conf_threshold, class_name))
+                models_ok += 1
+            except Exception as e:
+                self._log_model_error(model_name, e)
+                model_errors.append(f"{model_name}: {type(e).__name__}: {e}")
+
+        if not self.is_ready:
+            model_status = "unavailable"
+            if self.load_error:
+                model_errors.append(self.load_error)
+        elif models_ok == 0:
+            model_status = "error"
+        elif model_errors:
+            model_status = "degraded"
+        else:
+            model_status = "ok"
+        return raw_boxes, model_status, model_errors
 
     def process_frame(self, frame_bgr: np.ndarray, conf_threshold: float = 0.25, 
                       boom_sections_count: int = 8, is_stream: bool = False) -> Dict[str, Any]:
         t0 = time.time()
         h, w = frame_bgr.shape[:2]
-        
-        raw_boxes = []
-        
-        if self.yolo_cropandweed is not None:
-            try:
-                res = self.yolo_cropandweed.predict(frame_bgr, conf=conf_threshold, imgsz=640, verbose=False)
-                for r in res:
-                    for b in r.boxes:
-                        xyxy = b.xyxy[0].cpu().numpy().tolist()
-                        cls_id = int(b.cls[0].item())
-                        conf = float(b.conf[0].item())
-                        c_name = self.yolo_cropandweed.names.get(cls_id, "Weed")
-                        raw_boxes.append({
-                            "bbox": xyxy,
-                            "conf": conf,
-                            "raw_class": c_name
-                        })
-            except Exception as e:
-                pass
 
-        if self.yolo_broadleaf is not None:
-            try:
-                res_bl = self.yolo_broadleaf.predict(frame_bgr, conf=conf_threshold, imgsz=640, verbose=False)
-                for r in res_bl:
-                    for b in r.boxes:
-                        xyxy = b.xyxy[0].cpu().numpy().tolist()
-                        conf = float(b.conf[0].item())
-                        raw_boxes.append({
-                            "bbox": xyxy,
-                            "conf": conf,
-                            "raw_class": "Weed_Broadleaf"
-                        })
-            except Exception as e:
-                pass
-
-        if len(raw_boxes) == 0:
-            raw_boxes = self._extract_field_contours_or_mock(frame_bgr)
+        raw_boxes, model_status, model_errors = self._run_models(frame_bgr, conf_threshold)
 
         detections = []
         annual_count = 0
         perennial_count = 0
-        section_triggers = [False] * boom_sections_count
         section_weed_counts = [0] * boom_sections_count
 
         for item in raw_boxes:
-            x1, y1, x2, y2 = item["bbox"]
-            bw = max(1.0, x2 - x1)
-            bh = max(1.0, y2 - y1)
-            rel_area = (bw * bh) / (w * h)
-            aspect = bh / bw
-
-            raw_c = item["raw_class"]
-            is_crop = (raw_c in ["Crop", "Maize"]) and not item.get("forced_perennial", False)
-            
-            if is_crop:
-                obj = {
-                    "is_crop": True,
-                    "crop_name": raw_c,
-                    "bbox": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
-                    "conf": round(item["conf"], 2),
-                    "label": f"Культура: {raw_c}",
-                    "color": "#10B981"
-                }
-                detections.append(obj)
+            if is_crop_class(item["raw_class"]):
+                detections.append(_crop_detection(item))
                 continue
 
-            is_broadleaf = (aspect < 1.45)
-            is_perennial = (rel_area > 0.025 and (aspect < 1.2 or aspect > 1.8)) or (item.get("forced_perennial", False))
-            
-            if is_broadleaf:
-                weed_class = "A"
-                class_title = "Класс A (Двудольные / Широколистные)"
-                if is_perennial:
-                    subclass = "Многолетние (бодяк, осот, вьюнок)"
-                    species_sample = "Бодяк полевой (Cirsium arvense)"
-                    is_critical = True
-                    perennial_count += 1
-                    color = "#EF4444"
-                else:
-                    subclass = "Малолетние (щирица, марь)"
-                    species_sample = "Щирица запрокинутая (Amaranthus)"
-                    is_critical = False
-                    annual_count += 1
-                    color = "#F97316"
+            det = _weed_detection(item, w, h, boom_sections_count)
+            if det["is_perennial"]:
+                perennial_count += 1
             else:
-                weed_class = "B"
-                class_title = "Класс B (Злаковые / Узколистные)"
-                if is_perennial:
-                    subclass = "Многолетние (пырей ползучий)"
-                    species_sample = "Пырей ползучий (Elytrigia repens)"
-                    is_critical = True
-                    perennial_count += 1
-                    color = "#EC4899"
-                else:
-                    subclass = "Малолетние (овсюг, просо)"
-                    species_sample = "Овсюг обыкновенный (Avena fatua)"
-                    is_critical = False
-                    annual_count += 1
-                    color = "#38BDF8"
-
-            phase_info = AgroDecisionEngine.evaluate_phase(rel_area, aspect)
-
-            cx = (x1 + x2) / 2.0
-            sec_idx = int(math.floor((cx / max(1.0, w)) * boom_sections_count))
-            sec_idx = max(0, min(boom_sections_count - 1, sec_idx))
-            section_weed_counts[sec_idx] += 1
-            section_triggers[sec_idx] = True
-
-            detections.append({
-                "is_crop": False,
-                "weed_class": weed_class,
-                "class_title": class_title,
-                "subclass": subclass,
-                "species_name": species_sample,
-                "is_perennial": is_perennial,
-                "is_critical": is_critical,
-                "phase": phase_info,
-                "section_index": sec_idx,
-                "bbox": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
-                "conf": round(item["conf"], 2),
-                "color": color,
-                "label": f"[{weed_class}] {species_sample.split()[0]} ({phase_info['title']})"
-            })
+                annual_count += 1
+            section_weed_counts[det["section_index"]] += 1
+            detections.append(det)
 
         camera_coverage_m2 = 1.0 if not is_stream else 2.5
         annual_per_m2 = annual_count / camera_coverage_m2
         perennial_per_m2 = perennial_count / camera_coverage_m2
 
         decision = AgroDecisionEngine.evaluate_threshold(annual_per_m2, perennial_per_m2)
+        if model_status in ("error", "unavailable"):
+            decision = AgroDecisionEngine.model_failure_decision(model_status)
 
-        boom_nozzles = []
-        for i in range(boom_sections_count):
-            has_weed = section_triggers[i]
-            if decision["status"] == "low":
-                active = False
-            else:
-                active = has_weed
-                
-            boom_nozzles.append({
-                "section_id": i + 1,
-                "active": active,
-                "weed_count": section_weed_counts[i],
-                "flow_rate_percent": 100 if active and decision["status"] in ["critical", "heavy"] else (70 if active else 0)
-            })
-
+        boom_nozzles = _boom_nozzles(section_weed_counts, decision["status"])
         active_nozzle_count = sum(1 for n in boom_nozzles if n["active"])
         herbicide_saved_pct = round((1.0 - (active_nozzle_count / boom_sections_count)) * 100.0, 1)
 
@@ -345,97 +340,177 @@ class LocalCvPipeline:
             "active_nozzles_count": active_nozzle_count,
             "herbicide_saved_pct": herbicide_saved_pct,
             "detections": detections,
+            "model_status": model_status,
+            "model_errors": model_errors,
             "sprayer_speed_kmh": round(random.uniform(18.8, 19.6), 1),
             "timestamp": time.time()
         }
 
-    def _extract_field_contours_or_mock(self, frame_bgr: np.ndarray) -> List[Dict[str, Any]]:
-        h, w = frame_bgr.shape[:2]
-        boxes = []
-        try:
-            hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-            lower_green = np.array([25, 40, 40])
-            upper_green = np.array([85, 255, 255])
-            mask = cv2.inRange(hsv, lower_green, upper_green)
-            
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if 200 < area < (w * h * 0.4):
-                    x, y, bw, bh = cv2.boundingRect(cnt)
-                    conf = min(0.92, 0.45 + (area / (w * h)) * 5.0)
-                    boxes.append({
-                        "bbox": [float(x), float(y), float(x + bw), float(y + bh)],
-                        "conf": float(conf),
-                        "raw_class": "Weed"
-                    })
-                    if len(boxes) >= 8:
-                        break
-        except Exception:
-            pass
+# Display attributes per (weed class, is_perennial). Class A = broadleaf,
+# class B = grasses; the species is a representative example for the UI.
+WEED_PROFILES = {
+    ("A", True): {
+        "subclass": "Многолетние (бодяк, осот, вьюнок)",
+        "species_name": "Бодяк полевой (Cirsium arvense)",
+        "color": "#EF4444",
+    },
+    ("A", False): {
+        "subclass": "Малолетние (щирица, марь)",
+        "species_name": "Щирица запрокинутая (Amaranthus)",
+        "color": "#F97316",
+    },
+    ("B", True): {
+        "subclass": "Многолетние (пырей ползучий)",
+        "species_name": "Пырей ползучий (Elytrigia repens)",
+        "color": "#EC4899",
+    },
+    ("B", False): {
+        "subclass": "Малолетние (овсюг, просо)",
+        "species_name": "Овсюг обыкновенный (Avena fatua)",
+        "color": "#38BDF8",
+    },
+}
 
-        if not boxes:
-            boxes = [
-                {"bbox": [w * 0.15, h * 0.35, w * 0.30, h * 0.55], "conf": 0.88, "raw_class": "Weed", "forced_perennial": True},
-                {"bbox": [w * 0.55, h * 0.20, w * 0.68, h * 0.38], "conf": 0.81, "raw_class": "Weed", "forced_perennial": False},
-                {"bbox": [w * 0.75, h * 0.60, w * 0.88, h * 0.78], "conf": 0.74, "raw_class": "Weed", "forced_perennial": False},
-                {"bbox": [w * 0.35, h * 0.65, w * 0.48, h * 0.82], "conf": 0.79, "raw_class": "Sunflower"}
-            ]
-        return boxes
+WEED_CLASS_TITLES = {
+    "A": "Класс A (Двудольные / Широколистные)",
+    "B": "Класс B (Злаковые / Узколистные)",
+}
 
-def draw_detections_on_image(image_bgr: np.ndarray, result: Dict[str, Any]) -> np.ndarray:
-    img = image_bgr.copy()
+def _rounded_bbox(bbox: List[float]) -> List[float]:
+    return [round(v, 1) for v in bbox]
+
+def _crop_detection(item: Dict[str, Any]) -> Dict[str, Any]:
+    raw_c = item["raw_class"]
+    return {
+        "is_crop": True,
+        "crop_name": raw_c,
+        "bbox": _rounded_bbox(item["bbox"]),
+        "conf": round(item["conf"], 2),
+        "label": f"Культура: {raw_c}",
+        "color": "#10B981"
+    }
+
+def _weed_detection(item: Dict[str, Any], w: int, h: int, boom_sections_count: int) -> Dict[str, Any]:
+    """Classify a weed box by its shape (broadleaf vs grass, annual vs
+    perennial), estimate its growth phase and map it to a boom section."""
+    x1, y1, x2, y2 = item["bbox"]
+    bw = max(1.0, x2 - x1)
+    bh = max(1.0, y2 - y1)
+    rel_area = (bw * bh) / (w * h)
+    aspect = bh / bw
+
+    weed_class = "A" if aspect < 1.45 else "B"
+    is_perennial = rel_area > 0.025 and (aspect < 1.2 or aspect > 1.8)
+    profile = WEED_PROFILES[(weed_class, is_perennial)]
+    phase_info = AgroDecisionEngine.evaluate_phase(rel_area, aspect)
+
+    cx = (x1 + x2) / 2.0
+    sec_idx = int(math.floor((cx / max(1.0, w)) * boom_sections_count))
+    sec_idx = max(0, min(boom_sections_count - 1, sec_idx))
+
+    species = profile["species_name"]
+    return {
+        "is_crop": False,
+        "weed_class": weed_class,
+        "class_title": WEED_CLASS_TITLES[weed_class],
+        "subclass": profile["subclass"],
+        "species_name": species,
+        "is_perennial": is_perennial,
+        "is_critical": is_perennial,
+        "phase": phase_info,
+        "section_index": sec_idx,
+        "bbox": _rounded_bbox(item["bbox"]),
+        "conf": round(item["conf"], 2),
+        "color": profile["color"],
+        "label": f"[{weed_class}] {species.split()[0]} ({phase_info['title']})"
+    }
+
+def _boom_nozzles(section_weed_counts: List[int], decision_status: str) -> List[Dict[str, Any]]:
+    """Open a section's nozzle when it has weeds, unless spraying is not
+    economically justified (status "low")."""
+    nozzles = []
+    for i, weed_count in enumerate(section_weed_counts):
+        active = weed_count > 0 and decision_status != "low"
+        if not active:
+            flow = 0
+        elif decision_status in ("critical", "heavy"):
+            flow = 100
+        else:
+            flow = 70
+        nozzles.append({
+            "section_id": i + 1,
+            "active": active,
+            "weed_count": weed_count,
+            "flow_rate_percent": flow
+        })
+    return nozzles
+
+# BGR colours for detection overlays.
+CROP_BOX_COLOR = (16, 185, 129)
+PERENNIAL_BOX_COLOR = (68, 68, 239)
+CLASS_A_BOX_COLOR = (22, 115, 249)
+CLASS_B_BOX_COLOR = (248, 189, 56)
+WHITE = (255, 255, 255)
+HUD_BG = (11, 13, 15)
+HUD_ACCENT = (52, 211, 153)
+
+def _detection_style(det: Dict[str, Any]) -> Tuple[Tuple[int, int, int], str]:
+    """Return (BGR colour, label text) for a detection."""
+    if det.get("is_crop", False):
+        return CROP_BOX_COLOR, det["label"]
+
+    w_class = det.get("weed_class", "A")
+    if det.get("is_perennial", False):
+        color = PERENNIAL_BOX_COLOR
+    elif w_class == "A":
+        color = CLASS_A_BOX_COLOR
+    else:
+        color = CLASS_B_BOX_COLOR
+    species = det.get("species_name", "Сорняк").split()[0]
+    phase_t = det.get("phase", {}).get("title", "")
+    return color, f"[{w_class}] {species} | {phase_t}"
+
+def _draw_section_grid(img: np.ndarray, num_sections: int) -> None:
     h, w = img.shape[:2]
-
-    num_sections = len(result.get("boom_nozzles", []))
     for i in range(1, num_sections):
         x = int(w * (i / num_sections))
         cv2.line(img, (x, 0), (x, h), (40, 50, 60), 1, cv2.LINE_AA)
         cv2.putText(img, f"S{i}", (x - 28, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 116, 139), 1)
     cv2.putText(img, f"S{num_sections}", (w - 30, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 116, 139), 1)
 
-    for det in result.get("detections", []):
-        x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
-        is_crop = det.get("is_crop", False)
-        
-        if is_crop:
-            color = (16, 185, 129)
-            title = det["label"]
-        else:
-            w_class = det.get("weed_class", "A")
-            is_perennial = det.get("is_perennial", False)
-            if is_perennial:
-                color = (68, 68, 239)
-            elif w_class == "A":
-                color = (22, 115, 249)
-            else:
-                color = (248, 189, 56)
-            
-            species = det.get("species_name", "Сорняк").split()[0]
-            phase_t = det.get("phase", {}).get("title", "")
-            title = f"[{w_class}] {species} | {phase_t}"
+def _draw_detection(img: np.ndarray, det: Dict[str, Any]) -> None:
+    x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
+    color, title = _detection_style(det)
 
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-        corner_len = min(15, (x2 - x1) // 3, (y2 - y1) // 3)
-        cv2.line(img, (x1, y1), (x1 + corner_len, y1), (255, 255, 255), 3)
-        cv2.line(img, (x1, y1), (x1, y1 + corner_len), (255, 255, 255), 3)
-        cv2.line(img, (x2, y2), (x2 - corner_len, y2), (255, 255, 255), 3)
-        cv2.line(img, (x2, y2), (x2, y2 - corner_len), (255, 255, 255), 3)
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+    corner_len = min(15, (x2 - x1) // 3, (y2 - y1) // 3)
+    cv2.line(img, (x1, y1), (x1 + corner_len, y1), WHITE, 3)
+    cv2.line(img, (x1, y1), (x1, y1 + corner_len), WHITE, 3)
+    cv2.line(img, (x2, y2), (x2 - corner_len, y2), WHITE, 3)
+    cv2.line(img, (x2, y2), (x2, y2 - corner_len), WHITE, 3)
 
-        label_size, _ = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-        tw, th = label_size
-        cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, max(th + 8, y1)), color, -1)
-        cv2.putText(img, title, (x1 + 4, max(th + 2, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
+    (tw, th), _ = get_text_size(title, 0.45, 1)
+    cv2.rectangle(img, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, max(th + 8, y1)), color, -1)
+    put_text(img, title, (x1 + 4, max(th + 2, y1 - 4)), 0.45, (0, 0, 0), 1)
 
+def _draw_panel(img: np.ndarray, top_left: Tuple[int, int], bottom_right: Tuple[int, int]) -> None:
+    cv2.rectangle(img, top_left, bottom_right, HUD_BG, -1)
+    cv2.rectangle(img, top_left, bottom_right, HUD_ACCENT, 1)
+
+def _draw_hud(img: np.ndarray, result: Dict[str, Any]) -> None:
+    h, w = img.shape[:2]
     speed_text = f"19.2 km/h  |  FPS: {result.get('fps', 30.0)}  |  {result.get('latency_ms', 10.0)}ms"
-    cv2.rectangle(img, (w - 320, 10), (w - 10, 42), (11, 13, 15), -1)
-    cv2.rectangle(img, (w - 320, 10), (w - 10, 42), (52, 211, 153), 1)
-    cv2.putText(img, speed_text, (w - 310, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (52, 211, 153), 1, cv2.LINE_AA)
+    _draw_panel(img, (w - 320, 10), (w - 10, 42))
+    cv2.putText(img, speed_text, (w - 310, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.48, HUD_ACCENT, 1, cv2.LINE_AA)
 
     dec = result.get("decision", {})
-    action_text = f"РЕШЕНИЕ: {dec.get('action', '')}"
-    cv2.rectangle(img, (10, h - 45), (w - 10, h - 10), (11, 13, 15), -1)
-    cv2.rectangle(img, (10, h - 45), (w - 10, h - 10), (52, 211, 153), 1)
-    cv2.putText(img, action_text, (20, h - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+    _draw_panel(img, (10, h - 45), (w - 10, h - 10))
+    put_text(img, f"РЕШЕНИЕ: {dec.get('action', '')}", (20, h - 22), 0.55, WHITE, 1)
 
+def draw_detections_on_image(image_bgr: np.ndarray, result: Dict[str, Any]) -> np.ndarray:
+    img = image_bgr.copy()
+    _draw_section_grid(img, len(result.get("boom_nozzles", [])))
+    for det in result.get("detections", []):
+        _draw_detection(img, det)
+    _draw_hud(img, result)
     return img

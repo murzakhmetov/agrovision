@@ -1,6 +1,3 @@
-from typing import Dict, Any, List
-import re
-
 OFFLINE_RULES = [
     {
         "keywords": ["порог", "вред", "экономическ", "штука", "шт/м", "м2", "метр", "норма"],
@@ -66,17 +63,14 @@ def query_offline_knowledge_base(question: str) -> str:
     max_score = 0
     
     for item in OFFLINE_RULES:
-        score = 0
-        for kw in item["keywords"]:
-            if kw in q_lower:
-                score += 1
+        score = sum(1 for kw in item["keywords"] if kw in q_lower)
         if score > max_score:
             max_score = score
             best_match = item["answer"]
-            
-    if best_match and max_score > 0:
+
+    if best_match:
         return best_match
-        
+
     return """**Агрономический ассистент AgroVision AI (Оффлайн-режим):**
 
 Ваш запрос принят. В условиях автономной работы в полях Костанайской области доступны следующие разделы регламента:
